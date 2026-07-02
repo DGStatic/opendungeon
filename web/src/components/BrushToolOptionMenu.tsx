@@ -10,7 +10,7 @@ export default function BrushToolOptionMenu({
   onChangeBrush,
 }: BrushToolOptionMenuProps) {
   return (
-    <div className="text-white grid bg-aurora-gray-1200 rounded px-4 py-3 grid gap-3">
+    <div className="text-white grid bg-aurora-gray-1200 rounded px-4 py-3 grid gap-3 pointer-events-auto">
       <div>
         {(
           [
@@ -38,33 +38,6 @@ export default function BrushToolOptionMenu({
           </button>
         ))}
       </div>
-      {brush.type === "texturebrush" && (
-        <div>
-          <fieldset>
-            {[
-              { texture: null, label: "Eraser" },
-              { texture: "grass", label: "Grass" },
-              { texture: "water", label: "Water" },
-              { texture: "mud", label: "Mud" },
-            ].map(({ texture, label }, i) => (
-              <div key={i}>
-                <input
-                  id={`${texture}-texture-select`}
-                  type="radio"
-                  checked={brush.texture === texture}
-                  onChange={() =>
-                    onChangeBrush({
-                      texture,
-                      type: "texturebrush",
-                    })
-                  }
-                />
-                <label htmlFor={`${texture}-texture-select`}>{label}</label>
-              </div>
-            ))}
-          </fieldset>
-        </div>
-      )}
       {brush.type === "weightbrush" && (
         <div>
           <fieldset>
