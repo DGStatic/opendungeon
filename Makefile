@@ -19,7 +19,11 @@ clean:
 cyclo:
 	$(CYCLO) -over $(cyclolevel) .
 
-lint:
+docs:
+	swag fmt
+	swag init -g $(MAIN) --outputTypes go,yaml
+
+lint: cyclo
 	$(LINT) run ./...
 
 run:
@@ -32,4 +36,4 @@ tidy:
 	$(GO) fmt ./...
 	$(GO) mod tidy
 
-.PHONY: clean cyclo lint test tidy
+.PHONY: clean cyclo docs lint test tidy
