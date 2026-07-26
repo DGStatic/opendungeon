@@ -98,6 +98,30 @@ func New(cfg Config) (*fiber.App, error) {
 
 	admin := api.Group("/admin")
 	admin.Post("/register", r.registerAdminUser)
+	admin.Post("/cell-textures", func(c fiber.Ctx) error {
+		// TODO: figure out a way to access DB in middleware and move this to the middlewares package
+
+		sess := session.FromContext(c)
+		if sess == nil {
+			return c.SendStatus(fiber.StatusUnauthorized)
+		}
+
+		userId, ok := sess.Get("user_id").(uuid.UUID)
+		if !ok {
+			return c.SendStatus(fiber.StatusUnauthorized)
+		}
+
+		user, err := r.db.Queries.GetUser(c.Context(), userId)
+		if err != nil {
+			return c.SendStatus(fiber.StatusForbidden)
+		}
+
+		if !user.IsAdmin {
+			return c.SendStatus(fiber.StatusForbidden)
+		}
+
+		return c.Next()
+	}, r.createCellTexture)
 
 	auth := api.Group("/auth")
 	auth.Post("/register", r.registerUser)
@@ -109,8 +133,10 @@ func New(cfg Config) (*fiber.App, error) {
 	media := api.Group("/media")
 	media.Get("/avatars/:avatarID", r.getAvatar)
 
+	users := api.Group("/users", middlewares.Auth)
+	users.Get("/me", r.getMyUser)
+
 	celltextures := api.Group("/cell-textures", middlewares.Auth)
-	celltextures.Post("/", r.createCellTexture)
 	celltextures.Get("/", r.listCellTextures)
 	celltextures.Get("/:key", r.getCellTexture)
 
