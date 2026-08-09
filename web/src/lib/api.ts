@@ -20,7 +20,7 @@ export type APIUser = {
 
 export type APIProfile = {
   username: string;
-  avatar: string;
+  avatarId: string;
 };
 
 export type APIAuthProvider = {
@@ -31,6 +31,7 @@ export type APIAuthProvider = {
 export type APICellTexture = {
   key: string;
   displayName: string;
+  mediaId: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -67,15 +68,9 @@ export type APIGame = {
   isActive: boolean;
 };
 
-export function getCellTextureUrl(key: string): URL {
+export function getMediaUrl(mediaId: string): string {
   const url = new URL(BASE_URL.href);
-  url.pathname = "/api/cell-textures/" + key;
-  return url;
-}
-
-export function getAvatarUrl(avatarId: string): string {
-  const url = new URL(BASE_URL.href);
-  url.pathname = "/api/media/avatars/" + avatarId;
+  url.pathname = "/api/media/" + mediaId + "/content";
   return url.toString();
 }
 
