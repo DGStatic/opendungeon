@@ -22,3 +22,11 @@ func RepoToGame(g repository.Game) Game {
 		UpdatedAt: g.UpdatedAt,
 	}
 }
+
+func RepoToGames(g []repository.Game) []Game {
+	games := make([]Game, 0, len(g))
+	for _, row := range g {
+		games = append(games, RepoToGame(row))
+	}
+	return games
+}
