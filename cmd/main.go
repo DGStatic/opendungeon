@@ -1,8 +1,6 @@
 package main
 
 import (
-	"database/sql"
-	"errors"
 	"flag"
 	"fmt"
 	"net/url"
@@ -12,14 +10,12 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/joho/godotenv"
 	"github.com/opendungeon/opendungeon/assets"
-	"github.com/opendungeon/opendungeon/database/migrations"
+	"github.com/opendungeon/opendungeon/database"
 	"github.com/opendungeon/opendungeon/internal/env"
 	"github.com/opendungeon/opendungeon/internal/router"
+	"github.com/opendungeon/opendungeon/internal/storage"
 	_ "modernc.org/sqlite"
 )
 
@@ -91,31 +87,6 @@ func checkDirPermission(path string) error {
 	return err
 }
 
-func runMigrations(db *sql.DB) error {
-	source, err := iofs.New(migrations.FS, ".")
-	if err != nil {
-		return err
-	}
-
-	driver, err := sqlite.WithInstance(db, &sqlite.Config{
-		NoTxWrap: true,
-	})
-	if err != nil {
-		return err
-	}
-
-	migrator, err := migrate.NewWithInstance("sqlite", source, "", driver)
-	if err != nil {
-		return err
-	}
-
-	if err := migrator.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return err
-	}
-
-	return nil
-}
-
 //	@title			OpenDungeon
 //	@description	Web API for OpenDungeon
 
@@ -152,18 +123,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	db, err := sql.Open("sqlite", filepath.Join(baseDir, dataDir, "opendungeon.db"))
-	if err != nil {
+	if err := database.Init(filepath.Join(baseDir, dataDir, "opendungeon.db")); err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer database.Close()
 
-	if err := runMigrations(db); err != nil {
-		log.Fatal(err)
-	}
-
-	storageDir, err := os.OpenRoot(filepath.Join(baseDir, storageDir))
-	if err != nil {
+	if err := storage.Init(filepath.Join(baseDir, storageDir)); err != nil {
 		log.Fatal(err)
 	}
 
@@ -200,8 +165,6 @@ func main() {
 		AppVersion:          version,
 		IsDevMode:           isDevMode,
 		StaticDir:           filepath.Join(baseDir, staticDir),
-		DB:                  db,
-		Storage:             storageDir,
 		BaseURL:             baseUrl,
 		ClientURL:           clientUrl,
 		DisableUserCreation: disableUserCreation == "true",

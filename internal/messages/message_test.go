@@ -230,10 +230,11 @@ func TestSync(t *testing.T) {
 			Players: map[uuid.UUID]string{
 				uuid.Nil: "johndoe",
 			},
+			Level: nil,
 		},
 	}
 
-	validSyncMessageBuf := []byte{byte(messages.MessageTypeSync), 0, 0x5e, 0xb5, 0x78, 0x6a, 0x00, 0x00, 0x00, 0x00, 0x3E, 0x00, 0x00, 0x00, 123, 34, 112, 108, 97, 121, 101, 114, 115, 34, 58, 123, 34, 48, 48, 48, 48, 48, 48, 48, 48, 45, 48, 48, 48, 48, 45, 48, 48, 48, 48, 45, 48, 48, 48, 48, 45, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 34, 58, 34, 106, 111, 104, 110, 100, 111, 101, 34, 125, 125}
+	validSyncMessageBuf := []byte{byte(messages.MessageTypeSync), 0, 0x5e, 0xb5, 0x78, 0x6a, 0x00, 0x00, 0x00, 0x00, 0x4B, 0x00, 0x00, 0x00, 123, 34, 112, 108, 97, 121, 101, 114, 115, 34, 58, 123, 34, 48, 48, 48, 48, 48, 48, 48, 48, 45, 48, 48, 48, 48, 45, 48, 48, 48, 48, 45, 48, 48, 48, 48, 45, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 34, 58, 34, 106, 111, 104, 110, 100, 111, 101, 34, 125, 44, 34, 108, 101, 118, 101, 108, 34, 58, 110, 117, 108, 108, 125}
 
 	t.Run("valid encode", func(t *testing.T) {
 		t.Parallel()
@@ -248,5 +249,27 @@ func TestSync(t *testing.T) {
 		received, err := messages.BufferToSync(validSyncMessageBuf)
 		require.NoError(t, err)
 		assert.Equal(t, validSyncMessage, received)
+	})
+}
+
+func TestLoadLevel(t *testing.T) {
+	validLoadLevelMessage := messages.LoadLevel{
+		Message: messages.Message{
+			ID:     0,
+			SentAt: int64(1786295646),
+		},
+		LevelID: "10c7850f-b24c-4496-bbee-f7ff68885064",
+	}
+	validLoadLevelBuf := []byte{8, 0, 0x5e, 0xb5, 0x78, 0x6a, 0x00, 0x00, 0x00, 0x00, 36, '1', '0', 'c', '7', '8', '5', '0', 'f', '-', 'b', '2', '4', 'c', '-', '4', '4', '9', '6', '-', 'b', 'b', 'e', 'e', '-', 'f', '7', 'f', 'f', '6', '8', '8', '8', '5', '0', '6', '4'}
+
+	t.Run("valid decode", func(t *testing.T) {
+		loadLevelMessage, err := messages.BufferToLoadLevel(validLoadLevelBuf)
+		require.NoError(t, err)
+		assert.Equal(t, validLoadLevelMessage, loadLevelMessage)
+	})
+
+	t.Run("valid encode", func(t *testing.T) {
+		loadLevelMessageBuf := validLoadLevelMessage.ToBuffer()
+		assert.Equal(t, validLoadLevelBuf, loadLevelMessageBuf)
 	})
 }

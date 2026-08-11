@@ -1,13 +1,19 @@
 package rooms
 
 import (
+	"context"
+	"encoding/json"
 	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/google/uuid"
+	"github.com/opendungeon/opendungeon/database"
 	"github.com/opendungeon/opendungeon/internal/messages"
+	"github.com/opendungeon/opendungeon/internal/repository"
+	"github.com/opendungeon/opendungeon/internal/storage"
 	"github.com/opendungeon/opendungeon/models"
+	"github.com/opendungeon/opendungeon/pkg/grid"
 )
 
 const (
@@ -54,10 +60,10 @@ func (r *Room) StartClient(ws *websocket.Conn, playerID uuid.UUID, playerName st
 	}
 
 	client := Client{
-		ID:   playerID,
-		Room: r,
-		Conn: ws,
-		Send: make(chan []byte, 256),
+		PlayerID: playerID,
+		Room:     r,
+		Conn:     ws,
+		Send:     make(chan []byte, 256),
 	}
 
 	r.Clients[playerID] = &client
@@ -72,7 +78,7 @@ func (r *Room) StartClient(ws *websocket.Conn, playerID uuid.UUID, playerName st
 		PlayerName: playerName,
 	}).ToBuffer()
 	for _, client := range r.Clients {
-		if client.ID == playerID {
+		if client.PlayerID == playerID {
 			continue
 		}
 
@@ -103,16 +109,16 @@ func (r *Room) DisconnectClient(id uuid.UUID) {
 }
 
 type Client struct {
-	ID   uuid.UUID
-	Room *Room
-	Conn *websocket.Conn
-	Send chan []byte
+	PlayerID uuid.UUID
+	Room     *Room
+	Conn     *websocket.Conn
+	Send     chan []byte
 }
 
 func (c *Client) ReadPump() {
 	defer func() {
 		_ = c.Conn.Close()
-		c.Room.DisconnectClient(c.ID)
+		c.Room.DisconnectClient(c.PlayerID)
 	}()
 
 	c.Conn.SetReadLimit(maxMessageSize)
@@ -133,40 +139,80 @@ func (c *Client) ReadPump() {
 		case messages.MessageTypeChat:
 			chat, err := messages.BufferToChat(msg)
 			if err != nil {
-				ack := messages.Ack{
-					Message: messages.Message{
-						ID:     0, // TODO: Generate message ID
-						SentAt: time.Now().Unix(),
-					},
-					PromptID: chat.ID,
-					Accepted: false,
-				}
-				ackBuf := ack.ToBuffer()
-				c.Send <- ackBuf
-
+				c.rejectMessage(chat.ID)
 				continue
 			}
 
 			for _, client := range c.Room.Clients {
-				if client.ID == c.ID {
+				if client.PlayerID == c.PlayerID {
 					continue
 				}
 
 				client.Send <- msg
 			}
 
-			ack := messages.Ack{
-				Message: messages.Message{
-					ID:     0, // TODO: Generate message ID
-					SentAt: time.Now().Unix(),
-				},
-				PromptID: chat.ID,
-				Accepted: true,
-			}
-			ackBuf := ack.ToBuffer()
-			c.Send <- ackBuf
+			c.acceptMessage(chat.ID)
 		case messages.MessageTypeAnimate:
 		case messages.MessageTypeMove:
+		case messages.MessageTypeLoadLevel:
+			loadLevel, err := messages.BufferToLoadLevel(msg)
+			if err != nil {
+				c.rejectMessage(loadLevel.ID)
+				continue
+			}
+
+			levelUuid, err := uuid.Parse(loadLevel.LevelID)
+			if err != nil {
+				c.rejectMessage(loadLevel.ID)
+				continue
+			}
+
+			conn, err := database.Connect(context.Background())
+			if err != nil {
+				c.rejectMessage(loadLevel.ID)
+				continue
+			}
+
+			repo := repository.New(conn)
+
+			level, err := repo.GetLevel(context.Background(), repository.GetLevelParams{
+				UserUuid:  c.PlayerID,
+				LevelUuid: levelUuid,
+			})
+			_ = conn.Close()
+			if err != nil {
+				c.rejectMessage(loadLevel.ID)
+				continue
+			}
+
+			fin, err := storage.Open(level.Medium.Uuid.String())
+			if err != nil {
+				c.rejectMessage(loadLevel.ID)
+				continue
+			}
+
+			var levelData grid.SerializedGrid
+			err = json.NewDecoder(fin).Decode(&levelData)
+			_ = fin.Close()
+			if err != nil {
+				c.rejectMessage(loadLevel.ID)
+				continue
+			}
+			c.Room.Data.Level = &levelData
+
+			for _, client := range c.Room.Clients {
+				syncMessage := (&messages.Sync{
+					Message: messages.Message{
+						ID:     0, // TODO: Generate message ID
+						SentAt: time.Now().Unix(),
+					},
+					Data: c.Room.Data,
+				}).ToBuffer()
+				client.Send <- syncMessage
+			}
+
+			c.acceptMessage(loadLevel.ID)
+
 		default:
 			continue
 		}
@@ -180,7 +226,7 @@ func (c *Client) WritePump() {
 	defer func() {
 		ticker.Stop()
 		_ = c.Conn.Close()
-		c.Room.DisconnectClient(c.ID)
+		c.Room.DisconnectClient(c.PlayerID)
 	}()
 
 	for {
@@ -228,4 +274,30 @@ func (c *Client) WritePump() {
 			}
 		}
 	}
+}
+
+func (c *Client) rejectMessage(id uint8) {
+	ack := messages.Ack{
+		Message: messages.Message{
+			ID:     0, // TODO: Generate message ID
+			SentAt: time.Now().Unix(),
+		},
+		PromptID: id,
+		Accepted: false,
+	}
+	ackBuf := ack.ToBuffer()
+	c.Send <- ackBuf
+}
+
+func (c *Client) acceptMessage(id uint8) {
+	ack := messages.Ack{
+		Message: messages.Message{
+			ID:     0, // TODO: Generate message ID
+			SentAt: time.Now().Unix(),
+		},
+		PromptID: id,
+		Accepted: true,
+	}
+	ackBuf := ack.ToBuffer()
+	c.Send <- ackBuf
 }
