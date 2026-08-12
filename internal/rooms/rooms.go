@@ -3,10 +3,13 @@ package rooms
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/contrib/v3/websocket"
+	"github.com/gofiber/fiber/v3/log"
 	"github.com/google/uuid"
 	"github.com/opendungeon/opendungeon/database"
 	"github.com/opendungeon/opendungeon/internal/messages"
@@ -23,40 +26,58 @@ const (
 	writeWait      = 10 * time.Second
 )
 
+var (
+	ErrRoomNotFound = errors.New("room not found")
+	ErrRoomInvalid  = errors.New("room invalid")
+)
+
+var rooms sync.Map
+
+type Event struct {
+	actorID uuid.UUID
+	message messages.Message
+}
+
 type Room struct {
-	Clients        map[uuid.UUID]*Client
-	Broadcast      chan []byte
+	Clients        sync.Map
+	EventQueue     chan Event
 	LastDisconnect atomic.Pointer[time.Time]
 	Data           models.Room
 }
 
-func Create() *Room {
+func Create(gameID uuid.UUID) *Room {
 	r := &Room{
-		Clients:   map[uuid.UUID]*Client{},
-		Broadcast: make(chan []byte),
+		Clients:    sync.Map{},
+		EventQueue: make(chan Event),
 		Data: models.Room{
 			Players: map[uuid.UUID]string{},
 		},
 	}
-	go r.Start()
+	go r.start()
+
+	rooms.Store(gameID, r)
 	return r
 }
 
-func (r *Room) Start() {
-	for message := range r.Broadcast {
-		for _, client := range r.Clients {
-			if client != nil {
-				client.Send <- message
-			}
-		}
+func Get(gameID uuid.UUID) (*Room, error) {
+	entry, ok := rooms.Load(gameID)
+	if !ok {
+		return nil, ErrRoomNotFound
 	}
+
+	room, ok := entry.(*Room)
+	if !ok {
+		return nil, ErrRoomInvalid
+	}
+
+	return room, nil
 }
 
-func (r *Room) StartClient(ws *websocket.Conn, playerID uuid.UUID, playerName string) {
-	existingClient, ok := r.Clients[playerID]
+func (r *Room) Join(ws *websocket.Conn, playerID uuid.UUID, playerName string) {
+	existingClient, ok := r.Clients.Load(playerID)
 	if ok {
-		_ = existingClient.Conn.Close()
-		delete(r.Clients, playerID)
+		_ = existingClient.(*Client).Conn.Close()
+		r.Clients.Delete(playerID)
 	}
 
 	client := Client{
@@ -66,36 +87,29 @@ func (r *Room) StartClient(ws *websocket.Conn, playerID uuid.UUID, playerName st
 		Send:     make(chan []byte, 256),
 	}
 
-	r.Clients[playerID] = &client
+	r.Clients.Store(playerID, &client)
 	r.Data.Players[playerID] = playerName
 
-	joinMessage := (&messages.Join{
-		Message: messages.Message{
-			ID:     0,
-			SentAt: time.Now().Unix(),
-		},
-		PlayerID:   playerID.String(),
-		PlayerName: playerName,
-	}).ToBuffer()
-	for _, client := range r.Clients {
+	joinMessage := messages.
+		NewJoin(0, time.Now(), playerID.String(), playerName).
+		Encode()
+	r.Clients.Range(func(_, value any) bool {
+		client := value.(*Client)
 		if client.PlayerID == playerID {
-			continue
+			return true
 		}
 
 		client.Send <- joinMessage
-	}
+		return true
+	})
 
 	// setup writer
 	go client.WritePump()
 
 	// sync
-	syncMessage := (&messages.Sync{
-		Message: messages.Message{
-			ID:     0,
-			SentAt: time.Now().Unix(),
-		},
-		Data: r.Data,
-	}).ToBuffer()
+	syncMessage := messages.
+		NewSync(0, time.Now(), r.Data).
+		Encode()
 	client.Send <- syncMessage
 
 	// setup reader
@@ -105,199 +119,110 @@ func (r *Room) StartClient(ws *websocket.Conn, playerID uuid.UUID, playerName st
 func (r *Room) DisconnectClient(id uuid.UUID) {
 	now := time.Now()
 	r.LastDisconnect.Store(&now)
-	delete(r.Clients, id)
+	r.Clients.Delete(id)
 }
 
-type Client struct {
-	PlayerID uuid.UUID
-	Room     *Room
-	Conn     *websocket.Conn
-	Send     chan []byte
-}
+func (r *Room) start() {
+	for event := range r.EventQueue {
+		actorRaw, exists := r.Clients.Load(event.actorID)
+		if !exists {
+			// actor is no longer connected. ignore
+			continue
+		}
+		actor := actorRaw.(*Client)
 
-func (c *Client) ReadPump() {
-	defer func() {
-		_ = c.Conn.Close()
-		c.Room.DisconnectClient(c.PlayerID)
-	}()
-
-	c.Conn.SetReadLimit(maxMessageSize)
-	if err := c.Conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
-		return
-	}
-
-	c.Conn.SetPongHandler(func(string) error { _ = c.Conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
-	for {
-		_, msg, err := c.Conn.ReadMessage()
-		if err != nil {
-			break
+		var ok bool
+		switch event.message.(type) {
+		case *messages.Ack:
+			// do nothing, server doesn't listen for client ack
+		case *messages.Join:
+			// do nothing, only server can issue join
+		case *messages.Leave:
+			// do nothing, only server can issue leave
+		case *messages.Chat:
+			ok = r.handleChat(actor, event.message.(*messages.Chat))
+		case *messages.Animate:
+			// TODO
+		case *messages.Move:
+			// TODO
+		case *messages.Sync:
+			// do nothing, only server can issue sync
+		case *messages.LoadLevel:
+			ok = r.handleLoadLevel(actor, event.message.(*messages.LoadLevel))
 		}
 
-		switch messages.MessageType(msg[0]) {
-		case messages.MessageTypePing:
-		case messages.MessageTypeAck:
-		case messages.MessageTypeChat:
-			chat, err := messages.BufferToChat(msg)
-			if err != nil {
-				c.rejectMessage(chat.ID)
-				continue
-			}
-
-			for _, client := range c.Room.Clients {
-				if client.PlayerID == c.PlayerID {
-					continue
-				}
-
-				client.Send <- msg
-			}
-
-			c.acceptMessage(chat.ID)
-		case messages.MessageTypeAnimate:
-		case messages.MessageTypeMove:
-		case messages.MessageTypeLoadLevel:
-			loadLevel, err := messages.BufferToLoadLevel(msg)
-			if err != nil {
-				c.rejectMessage(loadLevel.ID)
-				continue
-			}
-
-			levelUuid, err := uuid.Parse(loadLevel.LevelID)
-			if err != nil {
-				c.rejectMessage(loadLevel.ID)
-				continue
-			}
-
-			conn, err := database.Connect(context.Background())
-			if err != nil {
-				c.rejectMessage(loadLevel.ID)
-				continue
-			}
-
-			repo := repository.New(conn)
-
-			level, err := repo.GetLevel(context.Background(), repository.GetLevelParams{
-				UserUuid:  c.PlayerID,
-				LevelUuid: levelUuid,
-			})
-			_ = conn.Close()
-			if err != nil {
-				c.rejectMessage(loadLevel.ID)
-				continue
-			}
-
-			fin, err := storage.Open(level.Medium.Uuid.String())
-			if err != nil {
-				c.rejectMessage(loadLevel.ID)
-				continue
-			}
-
-			var levelData grid.SerializedGrid
-			err = json.NewDecoder(fin).Decode(&levelData)
-			_ = fin.Close()
-			if err != nil {
-				c.rejectMessage(loadLevel.ID)
-				continue
-			}
-			c.Room.Data.Level = &levelData
-
-			for _, client := range c.Room.Clients {
-				syncMessage := (&messages.Sync{
-					Message: messages.Message{
-						ID:     0, // TODO: Generate message ID
-						SentAt: time.Now().Unix(),
-					},
-					Data: c.Room.Data,
-				}).ToBuffer()
-				client.Send <- syncMessage
-			}
-
-			c.acceptMessage(loadLevel.ID)
-
-		default:
+		if !ok {
+			actor.rejectMessage(event.message.ID())
 			continue
 		}
 
-		c.Room.Broadcast <- msg
+		actor.acceptMessage(event.message.ID())
 	}
 }
 
-func (c *Client) WritePump() {
-	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		ticker.Stop()
-		_ = c.Conn.Close()
-		c.Room.DisconnectClient(c.PlayerID)
-	}()
+func (r *Room) handleChat(actor *Client, msg *messages.Chat) (ok bool) {
+	chat := msg.Encode()
 
-	for {
-		select {
-		case message, ok := <-c.Send:
-			if err := c.Conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
-				return
-			}
-
-			if !ok {
-				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-
-			w, err := c.Conn.NextWriter(websocket.BinaryMessage)
-			if err != nil {
-				return
-			}
-
-			if _, err := w.Write(message); err != nil {
-				return
-			}
-
-			n := len(c.Send)
-			for i := 0; i < n; i++ {
-				if _, err := w.Write([]byte{'\n'}); err != nil {
-					continue
-				}
-
-				if _, err := w.Write(<-c.Send); err != nil {
-					continue
-				}
-			}
-
-			if err := w.Close(); err != nil {
-				return
-			}
-		case <-ticker.C:
-			if err := c.Conn.SetWriteDeadline(time.Now().Add(pongWait)); err != nil {
-				return
-			}
-
-			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
+	r.Clients.Range(func(_, value any) bool {
+		client := value.(*Client)
+		if client.PlayerID == actor.PlayerID {
+			return true
 		}
-	}
+
+		client.Send <- chat
+		return true
+	})
+
+	return true
 }
 
-func (c *Client) rejectMessage(id uint8) {
-	ack := messages.Ack{
-		Message: messages.Message{
-			ID:     0, // TODO: Generate message ID
-			SentAt: time.Now().Unix(),
-		},
-		PromptID: id,
-		Accepted: false,
+func (r *Room) handleLoadLevel(actor *Client, msg *messages.LoadLevel) (ok bool) {
+	levelIDStr := msg.LevelID
+	levelID, err := uuid.Parse(levelIDStr)
+	if err != nil {
+		return false
 	}
-	ackBuf := ack.ToBuffer()
-	c.Send <- ackBuf
-}
 
-func (c *Client) acceptMessage(id uint8) {
-	ack := messages.Ack{
-		Message: messages.Message{
-			ID:     0, // TODO: Generate message ID
-			SentAt: time.Now().Unix(),
-		},
-		PromptID: id,
-		Accepted: true,
+	ctx := context.Background()
+	conn, err := database.Connect(ctx)
+	if err != nil {
+		return false
 	}
-	ackBuf := ack.ToBuffer()
-	c.Send <- ackBuf
+	repo := repository.New(conn)
+
+	level, err := repo.GetLevel(ctx, repository.GetLevelParams{
+		UserUuid:  actor.PlayerID,
+		LevelUuid: levelID,
+	})
+	_ = conn.Close()
+	if err != nil {
+		log.Errorf("failed to get level in room: %v", err)
+		return false
+	}
+
+	fin, err := storage.Open(level.Medium.Uuid.String())
+	if err != nil {
+		log.Errorf("failed to open level in room: %v", err)
+		return false
+	}
+
+	var levelData grid.SerializedGrid
+	err = json.NewDecoder(fin).Decode(&levelData)
+	_ = fin.Close()
+	if err != nil {
+		log.Errorf("failed to decode level: %v", err)
+		return false
+	}
+	r.Data.Level = &levelData
+
+	r.Clients.Range(func(_, value any) bool {
+		client := value.(*Client)
+		syncMessage := messages.
+			NewSync(0, time.Now(), r.Data). // TODO: Generate message ID
+			Encode()
+		client.Send <- syncMessage
+		return true
+	})
+
+	return true
 }
