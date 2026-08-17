@@ -16,7 +16,6 @@ import (
 	"github.com/opendungeon/opendungeon/internal/repository"
 	"github.com/opendungeon/opendungeon/internal/storage"
 	"github.com/opendungeon/opendungeon/models"
-	"github.com/opendungeon/opendungeon/pkg/grid"
 )
 
 const (
@@ -39,24 +38,36 @@ type Event struct {
 }
 
 type Room struct {
+	ID             uuid.UUID
+	ClientCount    atomic.Int32
 	Clients        sync.Map
 	EventQueue     chan Event
+	CreatedAt      atomic.Pointer[time.Time]
 	LastDisconnect atomic.Pointer[time.Time]
 	Data           models.Room
 }
 
 func Create(gameID uuid.UUID) *Room {
 	r := &Room{
+		ID:         gameID,
 		Clients:    sync.Map{},
 		EventQueue: make(chan Event),
 		Data: models.Room{
 			Players: map[uuid.UUID]string{},
 		},
 	}
+	now := time.Now()
+	r.CreatedAt.Store(&now)
 	go r.start()
 
 	rooms.Store(gameID, r)
 	return r
+}
+
+func Range(f func(uuid.UUID, *Room) bool) {
+	rooms.Range(func(key, value any) bool {
+		return f(key.(uuid.UUID), value.(*Room))
+	})
 }
 
 func Get(gameID uuid.UUID) (*Room, error) {
@@ -88,6 +99,7 @@ func (r *Room) Join(ws *websocket.Conn, playerID uuid.UUID, playerName string) {
 	}
 
 	r.Clients.Store(playerID, &client)
+	r.ClientCount.Add(1)
 	r.Data.Players[playerID] = playerName
 
 	joinMessage := messages.
@@ -120,6 +132,20 @@ func (r *Room) DisconnectClient(id uuid.UUID) {
 	now := time.Now()
 	r.LastDisconnect.Store(&now)
 	r.Clients.Delete(id)
+	r.ClientCount.Add(-1)
+}
+
+func (r *Room) Close() {
+	slog.Info("closing room", "id", r.ID.String())
+	// TODO: COMMIT THE GAME DATA TO STORAGE
+
+	r.Clients.Range(func(key, value any) bool {
+		client := value.(*Client)
+		_ = client.Conn.Close()
+		return true
+	})
+
+	rooms.Delete(r.ID)
 }
 
 func (r *Room) start() {
@@ -206,7 +232,7 @@ func (r *Room) handleLoadLevel(actor *Client, msg *messages.LoadLevel) (ok bool)
 		return false
 	}
 
-	var levelData grid.SerializedGrid
+	var levelData models.LevelData
 	err = json.NewDecoder(fin).Decode(&levelData)
 	_ = fin.Close()
 	if err != nil {
