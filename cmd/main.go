@@ -3,13 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
+	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/log"
 	"github.com/joho/godotenv"
 	"github.com/opendungeon/opendungeon/assets"
 	"github.com/opendungeon/opendungeon/database"
@@ -87,6 +89,21 @@ func checkDirPermission(path string) error {
 	return err
 }
 
+func writeLogHeader(addr, version, environment string) error {
+	startMessage := new(strings.Builder)
+	header, _ := assets.FS.ReadFile("opendungeon.txt")
+	if _, err := startMessage.Write(header); err != nil {
+		return err
+	}
+
+	startMessage.WriteString("Address: " + addr + "\n")
+	startMessage.WriteString("Version: " + version + "\n")
+	startMessage.WriteString("Environment: " + environment + "\n")
+
+	_, err := os.Stdout.WriteString(startMessage.String())
+	return err
+}
+
 //	@title			OpenDungeon
 //	@description	Web API for OpenDungeon
 
@@ -137,11 +154,16 @@ func main() {
 		logPath := filepath.Join(baseDir, logDir, logName)
 		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err != nil {
-			log.Error(err)
+			log.Fatal(err)
 		}
 		defer logFile.Close()
 
-		log.SetOutput(logFile)
+		fileHandler := slog.NewTextHandler(logFile, nil)
+		outHandler := slog.NewTextHandler(os.Stdout, nil)
+
+		handler := slog.NewMultiHandler(fileHandler, outHandler)
+		logger := slog.New(handler)
+		slog.SetDefault(logger)
 	}
 
 	baseUrlStr := env.Fallback("BASE_URL", "http://localhost:8000")
@@ -175,22 +197,17 @@ func main() {
 		log.Fatalf("failed to create router: %v", err)
 	}
 
-	app.Hooks().OnPreStartupMessage(func(sm *fiber.PreStartupMessageData) error {
-		header, _ := assets.FS.ReadFile("opendungeon.txt")
-		environment := "Production"
-		if isDevMode {
-			environment = "Development"
-		}
-
-		sm.BannerHeader = string(header)
-		sm.AddInfo("version", "Version", version)
-		sm.AddInfo("environment", "Environment", environment)
-
-		return nil
-	})
+	environment := "Production"
+	if isDevMode {
+		environment = "Development"
+	}
 
 	addr := fmt.Sprintf(":%d", port)
-	if err := app.Listen(addr); err != nil {
+	if err := writeLogHeader(addr, version, environment); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := http.ListenAndServe(addr, app); err != nil {
 		log.Fatal(err)
 	}
 }

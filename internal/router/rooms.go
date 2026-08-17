@@ -1,51 +1,51 @@
 package router
 
 import (
-	"context"
+	"log/slog"
+	"net/http"
 
-	"github.com/gofiber/contrib/v3/websocket"
-	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/log"
 	"github.com/google/uuid"
 	"github.com/opendungeon/opendungeon/database"
 	"github.com/opendungeon/opendungeon/internal/handlers"
 )
 
-// joinGame
+// joinRoom
 //
 //	@Summary		Join game
 //	@Description	Join an existing game via a web socket.
 //	@Tags			Games
 //	@Router			/api/rooms/{gameID} [get]
-func (r *router) joinRoom(c *websocket.Conn) {
-	userId, ok := c.Locals("userId").(uuid.UUID)
+func (app *App) joinRoom(w http.ResponseWriter, r *http.Request) {
+	userID, ok := getUserID(r.Context())
 	if !ok {
-		_ = c.WriteMessage(websocket.TextMessage, []byte(fiber.ErrUnauthorized.Message))
-		_ = c.Close()
+		http.Error(w, "Unauthorized.", http.StatusUnauthorized)
 		return
 	}
 
-	gameIdStr := c.Params("gameID")
-	gameId, err := uuid.Parse(gameIdStr)
+	gameIDStr := r.PathValue("gameID")
+	gameID, err := uuid.Parse(gameIDStr)
 	if err != nil {
-		_ = c.WriteMessage(websocket.TextMessage, []byte(fiber.ErrBadRequest.Message))
-		_ = c.Close()
+		http.Error(w, "Invalid game ID.", http.StatusBadRequest)
 		return
 	}
 
-	db, err := database.Connect(context.Background())
+	conn, err := database.Connect(r.Context())
 	if err != nil {
-		log.Errorf("failed to connect to database: %v", err)
-		_ = c.WriteMessage(websocket.TextMessage, []byte(fiber.ErrInternalServerError.Message))
-		_ = c.Close()
+		slog.Error("failed to connect to database", "error", err.Error())
+		http.Error(w, "Failed to connect to database.", http.StatusInternalServerError)
 		return
 	}
-	defer db.Close()
+	defer conn.Close()
 
-	if err = handlers.JoinRoom(context.Background(), c, db, userId, gameId); err != nil {
-		log.Errorf("failed to join game: %v", err)
-		_ = c.WriteMessage(websocket.TextMessage, []byte(fiber.ErrInternalServerError.Message))
-		_ = c.Close()
+	ws, err := app.wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		slog.Error("failed to upgrade connection", "error", err.Error())
+		http.Error(w, "Failed to upgrade connection.", http.StatusInternalServerError)
+		return
+	}
+
+	if err := handlers.JoinRoom(r.Context(), ws, conn, userID, gameID); err != nil {
+		writeHandlerErr(w, err)
 		return
 	}
 }

@@ -1,13 +1,14 @@
 package router
 
 import (
+	"log/slog"
 	"net/http"
 
-	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/log"
 	"github.com/opendungeon/opendungeon/database"
 	"github.com/opendungeon/opendungeon/internal/handlers"
 )
+
+const maxFormSize = 5_000_000
 
 // createCellTexture
 //
@@ -24,53 +25,42 @@ import (
 //	@Failure		415			{string}	string							"Unsupported media type"
 //	@Failure		500			{string}	string							"Server error"
 //	@Router			/api/cell-textures [post]
-func (r *router) createCellTexture(c fiber.Ctx) error {
-	userID, ok := getUserId(c)
+func (app *App) createCellTexture(w http.ResponseWriter, r *http.Request) {
+	userID, ok := getUserID(r.Context())
 	if !ok {
-		return c.Status(fiber.StatusUnauthorized).SendString("Unauthorized")
+		http.Error(w, "Unauthorized.", http.StatusUnauthorized)
+		return
 	}
 
-	form, err := c.MultipartForm()
+	if err := r.ParseMultipartForm(maxFormSize); err != nil {
+		http.Error(w, "Invalid request body.", http.StatusBadRequest)
+		return
+	}
+
+	key := r.PostFormValue("key")
+	displayName := r.PostFormValue("displayName")
+	file, _, err := r.FormFile("file")
 	if err != nil {
-		return c.Status(http.StatusBadRequest).SendString("Invalid request body.")
-	}
-
-	keys, ok := form.Value["key"]
-	if !ok || len(keys) < 1 {
-		return c.Status(http.StatusBadRequest).SendString("Missing key.")
-	}
-	key := keys[0]
-
-	displayNames, ok := form.Value["displayName"]
-	if !ok || len(displayNames) < 1 {
-		return c.Status(http.StatusBadRequest).SendString("Missing display name.")
-	}
-	displayName := displayNames[0]
-
-	files, ok := form.File["file"]
-	if !ok && len(files) < 1 {
-		return c.Status(http.StatusBadRequest).SendString("Missing file.")
-	}
-
-	file, err := files[0].Open()
-	if err != nil {
-		return c.Status(http.StatusBadRequest).SendString("Failed to open form file.")
+		http.Error(w, "Invalid form file.", http.StatusBadRequest)
+		return
 	}
 	defer file.Close()
 
-	db, err := database.Connect(c.Context())
+	conn, err := database.Connect(r.Context())
 	if err != nil {
-		log.Errorf("failed to connect to database: %v", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to connect to database.")
+		slog.Error("failed to connect to database", "error", err.Error())
+		http.Error(w, "Failed to connect to database.", http.StatusInternalServerError)
+		return
 	}
-	defer db.Close()
+	defer conn.Close()
 
-	texture, err := handlers.CreateCellTexture(c, db, userID, key, displayName, file)
+	texture, err := handlers.CreateCellTexture(r.Context(), conn, userID, key, displayName, file)
 	if err != nil {
-		return err
+		writeHandlerErr(w, err)
+		return
 	}
 
-	return c.Status(http.StatusCreated).JSON(texture)
+	_ = writeJSON(w, http.StatusCreated, texture)
 }
 
 // listCellTextures
@@ -82,18 +72,20 @@ func (r *router) createCellTexture(c fiber.Ctx) error {
 //	@Success		200	{object}	[]database.ListCellTexturesRow	"List of cell textures"
 //	@Failure		500	{string}	string							"Server error"
 //	@Router			/api/cell-textures [get]
-func (r *router) listCellTextures(c fiber.Ctx) error {
-	db, err := database.Connect(c.Context())
+func (app *App) listCellTextures(w http.ResponseWriter, r *http.Request) {
+	conn, err := database.Connect(r.Context())
 	if err != nil {
-		log.Errorf("failed to connect to database: %v", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to connect to database.")
+		slog.Error("failed to connect to database", "error", err.Error())
+		http.Error(w, "Failed to connect to database.", http.StatusInternalServerError)
+		return
 	}
-	defer db.Close()
+	defer conn.Close()
 
-	textures, err := handlers.ListCellTextures(c, db)
+	textures, err := handlers.ListCellTextures(r.Context(), conn)
 	if err != nil {
-		return err
+		writeHandlerErr(w, err)
+		return
 	}
 
-	return c.JSON(textures)
+	_ = writeJSON(w, http.StatusOK, textures)
 }

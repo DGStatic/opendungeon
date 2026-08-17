@@ -1,8 +1,11 @@
 package router
 
 import (
-	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/log"
+	"io"
+	"log/slog"
+	"net/http"
+	"strconv"
+
 	"github.com/google/uuid"
 	"github.com/opendungeon/opendungeon/database"
 	"github.com/opendungeon/opendungeon/internal/handlers"
@@ -20,26 +23,29 @@ import (
 //	@Failure		404	{string}	string	"Not found"
 //	@Failure		500	{string}	string	"Server error"
 //	@Router			/api/media/{mediaID} [get]
-func (r *router) getMedia(c fiber.Ctx) error {
-	mediaIDStr := c.Params("mediaID")
+func (app *App) getMedia(w http.ResponseWriter, r *http.Request) {
+	mediaIDStr := r.PathValue("mediaID")
 	mediaID, err := uuid.Parse(mediaIDStr)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString("Invalid media ID.")
+		http.Error(w, "Invalid media ID.", http.StatusBadRequest)
+		return
 	}
 
-	db, err := database.Connect(c.Context())
+	conn, err := database.Connect(r.Context())
 	if err != nil {
-		log.Errorf("failed to connect to database: %v", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to connect to database.")
+		slog.Error("failed to connect to database", "error", err.Error())
+		http.Error(w, "Failed to connect to database.", http.StatusInternalServerError)
+		return
 	}
-	defer db.Close()
+	defer conn.Close()
 
-	media, err := handlers.GetMedia(c.Context(), db, mediaID)
+	media, err := handlers.GetMedia(r.Context(), conn, mediaID)
 	if err != nil {
-		return err
+		writeHandlerErr(w, err)
+		return
 	}
 
-	return c.JSON(media)
+	_ = writeJSON(w, http.StatusOK, media)
 }
 
 // getMediaContent
@@ -54,30 +60,35 @@ func (r *router) getMedia(c fiber.Ctx) error {
 //	@Failure		404	{string}	string	"Not found"
 //	@Failure		500	{string}	string	"Server error"
 //	@Router			/api/media/{mediaID}/content [get]
-func (r *router) getMediaContent(c fiber.Ctx) error {
-	mediaIDStr := c.Params("mediaID")
+func (app *App) getMediaContent(w http.ResponseWriter, r *http.Request) {
+	mediaIDStr := r.PathValue("mediaID")
 	mediaID, err := uuid.Parse(mediaIDStr)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString("Invalid media ID.")
+		http.Error(w, "Invalid media ID.", http.StatusBadRequest)
+		return
 	}
 
-	db, err := database.Connect(c.Context())
+	conn, err := database.Connect(r.Context())
 	if err != nil {
-		log.Errorf("failed to connect to database: %v", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to connect to database.")
+		slog.Error("failed to connect to database", "error", err.Error())
+		http.Error(w, "Failed to connect to database.", http.StatusInternalServerError)
+		return
 	}
-	defer db.Close()
+	defer conn.Close()
 
-	media, err := handlers.GetMedia(c.Context(), db, mediaID)
+	media, err := handlers.GetMedia(r.Context(), conn, mediaID)
 	if err != nil {
-		return err
+		writeHandlerErr(w, err)
+		return
 	}
 
-	content, err := handlers.GetMediaContent(c.Context(), mediaID)
+	content, err := handlers.GetMediaContent(r.Context(), mediaID)
 	if err != nil {
-		return err
+		writeHandlerErr(w, err)
+		return
 	}
 
-	c.Set("Content-Type", media.ContentType)
-	return c.SendStream(content, int(media.Size))
+	w.Header().Set("Content-Type", media.ContentType)
+	w.Header().Set("Content-Length", strconv.FormatInt(media.Size, 10))
+	_, _ = io.Copy(w, content)
 }

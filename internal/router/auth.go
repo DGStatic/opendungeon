@@ -1,12 +1,12 @@
 package router
 
 import (
-	"errors"
+	"io"
+	"log/slog"
+	"net/http"
 	"net/url"
+	"time"
 
-	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/log"
-	"github.com/gofiber/fiber/v3/middleware/session"
 	"github.com/opendungeon/opendungeon/database"
 	"github.com/opendungeon/opendungeon/internal/handlers"
 )
@@ -23,31 +23,30 @@ import (
 //	@Failure		400			{string}	string	"Bad request"
 //	@Failure		500			{string}	string	"Server error"
 //	@Router			/api/auth/register [post]
-func (r *router) registerUser(c fiber.Ctx) error {
-	var credentials struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-	err := c.Bind().Form(&credentials)
+func (app *App) registerUser(w http.ResponseWriter, r *http.Request) {
+	email := r.PostFormValue("email")
+	password := r.PostFormValue("password")
+
+	conn, err := database.Connect(r.Context())
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString("Invalid request body.")
+		slog.Error("failed to connect to database", "error", err.Error())
+		http.Error(w, "Failed to connect to database.", http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+
+	session, err := handlers.RegisterUser(r.Context(), conn, app.disableUserCreation, email, password, false)
+	if err != nil {
+		writeHandlerErr(w, err)
+		return
 	}
 
-	db, err := database.Connect(c.Context())
-	if err != nil {
-		log.Errorf("failed to connect to database: %v", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to connect to database.")
-	}
-	defer db.Close()
+	sessionCookie := app.createCookie("session_id", session.ID.String())
+	sessionCookie.Expires = time.Unix(session.ExpiresAt, 0)
+	http.SetCookie(w, sessionCookie)
 
-	userId, err := handlers.RegisterUser(c.Context(), db, r.disableUserCreation, credentials.Email, credentials.Password, false)
-	if err != nil {
-		return err
-	}
-
-	sess := session.FromContext(c)
-	sess.Set("user_id", userId)
-	return c.SendStatus(fiber.StatusCreated)
+	w.WriteHeader(http.StatusCreated)
+	_, _ = io.WriteString(w, "Created.")
 }
 
 // signIn
@@ -62,31 +61,30 @@ func (r *router) registerUser(c fiber.Ctx) error {
 //	@Failure		400			{string}	string	"Bad request"
 //	@Failure		500			{string}	string	"Server error"
 //	@Router			/api/auth/sign-in [post]
-func (r *router) signIn(c fiber.Ctx) error {
-	var credentials struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-	err := c.Bind().Form(&credentials)
+func (app *App) signIn(w http.ResponseWriter, r *http.Request) {
+	email := r.PostFormValue("email")
+	password := r.PostFormValue("password")
+
+	conn, err := database.Connect(r.Context())
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).SendString("Invalid request body.")
+		slog.Error("failed to connect to database", "error", err.Error())
+		http.Error(w, "Failed to connect to database.", http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+
+	session, err := handlers.SignIn(r.Context(), conn, email, password)
+	if err != nil {
+		writeHandlerErr(w, err)
+		return
 	}
 
-	db, err := database.Connect(c.Context())
-	if err != nil {
-		log.Errorf("failed to connect to database: %v", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to connect to database.")
-	}
-	defer db.Close()
+	sessionCookie := app.createCookie("session_id", session.ID.String())
+	sessionCookie.Expires = time.Unix(session.ExpiresAt, 0)
+	http.SetCookie(w, sessionCookie)
 
-	userId, err := handlers.SignIn(c.Context(), db, credentials.Email, credentials.Password)
-	if err != nil {
-		return err
-	}
-
-	sess := session.FromContext(c)
-	sess.Set("user_id", userId)
-	return c.SendStatus(fiber.StatusCreated)
+	w.WriteHeader(http.StatusCreated)
+	_, _ = io.WriteString(w, "Created.")
 }
 
 // signOut
@@ -99,10 +97,35 @@ func (r *router) signIn(c fiber.Ctx) error {
 //	@Failure		400	{string}	string	"Bad request"
 //	@Failure		500	{string}	string	"Server error"
 //	@Router			/api/auth/sign-in [post]
-func (r *router) signOut(c fiber.Ctx) error {
-	sess := session.FromContext(c)
-	sess.Delete("user_id")
-	return c.SendStatus(fiber.StatusNoContent)
+func (app *App) signOut(w http.ResponseWriter, r *http.Request) {
+	conn, err := database.Connect(r.Context())
+	if err != nil {
+		slog.Error("failed to connect to database", "error", err.Error())
+		http.Error(w, "Failed to connect to database.", http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+
+	sessionID, ok := getSessionID(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized.", http.StatusUnauthorized)
+		return
+	}
+
+	userID, ok := getUserID(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized.", http.StatusUnauthorized)
+		return
+	}
+
+	if err := handlers.SignOut(r.Context(), conn, sessionID, userID); err != nil {
+		writeHandlerErr(w, err)
+		return
+	}
+
+	deletedCookie := app.deleteCookie("session_id")
+	http.SetCookie(w, deletedCookie)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // listAuthProviders
@@ -114,21 +137,18 @@ func (r *router) signOut(c fiber.Ctx) error {
 //	@Success		200	{object}	[]handlers.AuthProvider	"Available auth providers"
 //	@Failure		500	{string}	string					"Server error"
 //	@Router			/api/auth/providers [get]
-func (r *router) listAuthProviders(c fiber.Ctx) error {
-	providers, err := handlers.ListAuthProviders(c.Context(), r.baseURL, r.discordClientID, r.discordClientSecret)
+func (app *App) listAuthProviders(w http.ResponseWriter, r *http.Request) {
+	providers, err := handlers.ListAuthProviders(r.Context(), app.baseURL, app.discordClientID, app.discordClientSecret)
 	if err != nil {
-		return err
+		writeHandlerErr(w, err)
+		return
 	}
 
-	c.Cookie(&fiber.Cookie{
-		Name:     "oauth_state",
-		Value:    providers.State,
-		HTTPOnly: true,
-		Secure:   true,
-		SameSite: fiber.CookieSameSiteLaxMode,
-	})
+	stateCookie := app.createCookie("oauth_state", providers.State)
+	stateCookie.SameSite = http.SameSiteLaxMode
+	http.SetCookie(w, stateCookie)
 
-	return c.JSON(providers.Providers)
+	_ = writeJSON(w, http.StatusOK, providers.Providers)
 }
 
 // discordCallback
@@ -142,50 +162,56 @@ func (r *router) listAuthProviders(c fiber.Ctx) error {
 //	@Success		303
 //	@Failure		500	{string}	string	"Server error"
 //	@Router			/api/auth/providers/discord/callback [get]
-func (r *router) discordCallback(c fiber.Ctx) error {
-	signInUrl := r.clientURL.JoinPath("sign-in")
+func (app *App) discordCallback(w http.ResponseWriter, r *http.Request) {
+	signInUrl := app.clientURL.JoinPath("sign-in")
 
-	stateCookie := c.Cookies("oauth_state")
-	code := c.Query("code")
-	state := c.Query("state")
+	stateCookie, err := r.Cookie("oauth_state")
+	if err != nil {
+		_ = writeString(w, http.StatusBadRequest, "Missing required state.")
+		return
+	}
+
+	query := r.URL.Query()
+	code := query.Get("code")
+	state := query.Get("state")
 
 	// CSRF violation
-	if stateCookie != state {
-		log.Error("received invalid state in oauth callback")
+	if stateCookie.Value != state {
+		slog.Error("received invalid state in oauth callback")
 		signInUrl.RawQuery = url.Values{"error": []string{"Invalid OAuth state."}}.Encode()
-		return c.Redirect().Status(fiber.StatusSeeOther).To(signInUrl.String())
+		http.Redirect(w, r, signInUrl.String(), http.StatusSeeOther)
+		return
 	}
 
-	db, err := database.Connect(c.Context())
+	conn, err := database.Connect(r.Context())
 	if err != nil {
-		log.Errorf("failed to connect to database: %v", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to connect to database.")
+		slog.Error("failed to connect to database", "error", err.Error())
+		http.Error(w, "Failed to connect to database.", http.StatusInternalServerError)
+		return
 	}
-	defer db.Close()
+	defer conn.Close()
 
-	redirect, err := handlers.DiscordCallback(
-		c.Context(),
-		db,
-		r.disableUserCreation,
-		r.discordClientID,
-		r.discordClientSecret,
-		r.baseURL,
-		r.clientURL,
+	session, err := handlers.DiscordCallback(
+		r.Context(),
+		conn,
+		app.disableUserCreation,
+		app.discordClientID,
+		app.discordClientSecret,
+		app.baseURL,
+		app.clientURL,
 		code,
 		state,
 	)
 	if err != nil {
 		q := url.Values{}
-		fiberErr := new(fiber.Error)
-		if errors.As(err, &fiberErr) {
-			q.Set("error", fiberErr.Message)
-		}
+		// TODO: set error message
 		signInUrl.RawQuery = q.Encode()
-		return c.Redirect().Status(fiber.StatusSeeOther).To(signInUrl.String())
+		http.Redirect(w, r, signInUrl.String(), http.StatusSeeOther)
+		return
 	}
 
-	sess := session.FromContext(c)
-	sess.Set("user_id", redirect.UserID)
-
-	return c.Redirect().Status(fiber.StatusSeeOther).To(redirect.Redirect.String())
+	sessionCookie := app.createCookie("session_id", session.ID.String())
+	sessionCookie.Expires = time.Unix(session.ExpiresAt, 0)
+	http.SetCookie(w, sessionCookie)
+	http.Redirect(w, r, app.clientURL.String(), http.StatusSeeOther)
 }

@@ -1,8 +1,9 @@
 package router
 
 import (
-	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/log"
+	"log/slog"
+	"net/http"
+
 	"github.com/opendungeon/opendungeon/database"
 	"github.com/opendungeon/opendungeon/internal/handlers"
 )
@@ -18,23 +19,26 @@ import (
 //	@Failure		404	{string}	string	"Not found"
 //	@Failure		500	{string}	string	"Server error"
 //	@Router			/api/users/me [get]
-func (r *router) getMyUser(c fiber.Ctx) error {
-	userId, ok := getUserId(c)
+func (app *App) getMyUser(w http.ResponseWriter, r *http.Request) {
+	userID, ok := getUserID(r.Context())
 	if !ok {
-		return fiber.ErrUnauthorized
+		http.Error(w, "Unauthorized.", http.StatusUnauthorized)
+		return
 	}
 
-	db, err := database.Connect(c.Context())
+	conn, err := database.Connect(r.Context())
 	if err != nil {
-		log.Errorf("failed to connect to database: %v", err)
-		return c.Status(fiber.StatusInternalServerError).SendString("Failed to connect to database.")
+		slog.Error("failed to connect to database", "error", err.Error())
+		http.Error(w, "Failed to connect to database.", http.StatusInternalServerError)
+		return
 	}
-	defer db.Close()
+	defer conn.Close()
 
-	user, err := handlers.GetUser(c.Context(), db, userId)
+	user, err := handlers.GetUser(r.Context(), conn, userID)
 	if err != nil {
-		return err
+		writeHandlerErr(w, err)
+		return
 	}
 
-	return c.JSON(user)
+	_ = writeJSON(w, http.StatusOK, user)
 }
