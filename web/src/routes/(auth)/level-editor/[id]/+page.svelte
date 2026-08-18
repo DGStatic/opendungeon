@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { callAPI, getMediaUrl, type APICellTexture } from "$lib/api";
+  import { callAPI, getMediaUrl, type APICellTexture, type APILevelData } from "$lib/api";
   import Controller, {
     type GameMouseMoveEvent,
     type GameMousePressEvent,
@@ -21,34 +21,24 @@
   const GRID_WIDTH = 256;
   const GRID_HEIGHT = 256;
 
-  type Cell = {
-    texture: number | null;
-    decoration: number | null;
-  };
-
-  type LevelData = {
-    version: number;
-    textures: string[];
-    decorations: string[];
-    grid: (Cell | null)[][];
-  };
-
   let { data }: PageData = $props();
 
   let canvas = $state<HTMLCanvasElement>();
   let levelId = $derived<string>(data.level.id);
   let levelName = $derived<string>(data.level.name ?? "");
   let selectedTexture = $state<string | null>(null);
+  let loading = $state(true);
   let controller: Controller;
   let renderer: Renderer;
   let camera: Camera;
-  let levelData: LevelData;
+  let levelData: APILevelData;
   let frameHandle = -1;
   let input: { type: "none" } | { type: "dragging"; button: number } = { type: "none" };
   let dragStartCoord: Cartesian | null = null;
   let dragCurrentCoord: Cartesian | null = null;
+  let rectId: number;
 
-  onMount(async () => {
+  onMount(() => {
     controller = new Controller(canvas!);
     renderer = new Renderer(canvas!, {
       resizeToWindow: true,
@@ -65,25 +55,27 @@
           grid: Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_HEIGHT).fill(null)),
         };
 
-    await renderer.loadTexture("system.plain", new Texture(1, 1));
+    rectId = renderer.createElement(Rectangle);
+
+    renderer.loadTexture("system.plain", new Texture(1, 1));
 
     const textureMediaLookup = data.cellTextures.reduce<Record<string, string>>((prev, curr) => {
       return { ...prev, [curr.key]: curr.mediaId };
     }, {});
 
-    await Promise.all(
+    Promise.all(
       levelData.textures.map((texture) => {
         const uri = getMediaUrl(textureMediaLookup[texture]);
         return renderer.loadTexture(texture, uri, {
           mode: "nearest",
         });
       }),
-    );
+    ).then(() => (loading = false));
     // TODO: load decorations
 
     loop();
 
-    window.onbeforeunload = () => {
+    return () => {
       window.cancelAnimationFrame(frameHandle);
     };
   });
@@ -119,13 +111,12 @@
   }
 
   function draw() {
-    if (!renderer || !levelData) {
+    if (!renderer || !levelData || loading) {
       return;
     }
 
     renderer.clear();
 
-    const rectId = renderer.createElement(Rectangle);
     const cellsByTexture: Record<number, Cartesian[]> = {};
     for (let row = 0; row < levelData.grid.length; row++) {
       for (let col = 0; col < levelData.grid[row].length; col++) {
@@ -135,7 +126,7 @@
         }
 
         const texture = cell.texture;
-        if (texture === undefined || texture === null) {
+        if (texture < 0) {
           continue;
         }
 

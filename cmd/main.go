@@ -115,6 +115,7 @@ func writeLogHeader(addr, version, environment string) error {
 
 //	@securityDefinitions.bearerauth	BearerAuth
 
+//gocyclo:ignore
 func main() {
 	_ = godotenv.Load()
 
@@ -217,7 +218,18 @@ func main() {
 	rc := workers.NewRoomCleaner(10*time.Minute, 5*time.Minute)
 	go rc.Start(ctx)
 
-	if err := http.ListenAndServe(addr, app); err != nil {
+	var server http.Server
+	server.Handler = app
+	server.Addr = addr
+
+	go func() {
+		if err := http.ListenAndServe(addr, app); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	<-ctx.Done()
+	if err := server.Shutdown(ctx); err != nil {
 		log.Fatal(err)
 	}
 }
