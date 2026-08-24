@@ -113,9 +113,11 @@ func New(cfg Config) (http.Handler, error) {
 
 	// MUST GO LAST
 	if !cfg.IsDevMode {
-		// TODO: look into caching
-		fs := http.FileServer(http.Dir(cfg.StaticDir))
-		mux.Handle("/", fs)
+		sfs, err := newSPAFileServer(cfg.StaticDir)
+		if err != nil {
+			return nil, err
+		}
+		mux.Handle("/", sfs)
 	} else {
 		app.cookieSameSite = http.SameSiteLaxMode
 		app.wsUpgrader.CheckOrigin = func(r *http.Request) bool {
