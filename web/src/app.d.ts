@@ -26,7 +26,7 @@ declare global {
         "shadow-intensity"?: string | number;
         "environment-image"?: string;
         exposure?: string | number;
-        class?: ClassValue
+        class?: ClassValue;
       };
     }
   }

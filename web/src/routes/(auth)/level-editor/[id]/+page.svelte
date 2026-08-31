@@ -66,7 +66,7 @@
       return { ...prev, [curr.key]: curr.mediaId };
     }, {});
 
-    console.log(getMediaUrl(data.decorations[0].mediaId))
+    console.log(getMediaUrl(data.decorations[0].mediaId));
 
     Promise.all(
       levelData.textures.map((texture) => {
