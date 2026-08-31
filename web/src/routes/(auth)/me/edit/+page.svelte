@@ -10,11 +10,13 @@
   import { resolve } from "$app/paths";
   import type { PageProps } from "./$types";
   import StyledFileUpload from "$lib/components/StyledFileUpload.svelte";
+  import { FileUpload } from "melt/builders";
 
   let { data }: PageProps = $props();
 
   let username = $state("");
   let file: File | null = $state(null);
+  const fileUpload = new FileUpload();
 
   async function handleSubmit(event: SubmitEvent) {
     event.preventDefault();
@@ -56,7 +58,12 @@
     </h1>
     <StyledSeparator />
     <form onsubmit={handleSubmit} class="grid gap-6">
-      <StyledFileUpload bind:value={file} label="Avatar" icon="material-symbols:person-rounded" />
+      <StyledFileUpload
+        bind:value={file}
+        {fileUpload}
+        label="Avatar"
+        icon="material-symbols:person-rounded"
+      />
       <StyledSeparator />
       <StyledInput bind:value={username} type="text" placeholder="Username" />
       <StyledButton label="Save" />

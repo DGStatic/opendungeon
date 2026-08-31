@@ -19,6 +19,7 @@
   import { resolve } from "$app/paths";
   import { goto } from "$app/navigation";
   import assert from "$lib/assert";
+  import "@google/model-viewer";
 
   const GRID_WIDTH = 256;
   const GRID_HEIGHT = 256;
@@ -64,6 +65,8 @@
     const textureMediaLookup = data.cellTextures.reduce<Record<string, string>>((prev, curr) => {
       return { ...prev, [curr.key]: curr.mediaId };
     }, {});
+
+    console.log(getMediaUrl(data.decorations[0].mediaId))
 
     Promise.all(
       levelData.textures.map((texture) => {
@@ -356,6 +359,21 @@
               class="texture border-2 border-gray-800 group-data-[selected=true]:border-gray-200"
             />
           </button>
+        </li>
+      {/each}
+    </ul>
+    <ul class="grid justify-start">
+      {#each data.decorations as decoration, i (i)}
+        <li>
+          <model-viewer
+            src={getMediaUrl(decoration.mediaId)}
+            alt={decoration.displayName}
+            auto-rotate
+            auto-rotate-delay="0"
+            rotation-per-second="60deg"
+            disable-zoom
+            class="size-16 border-2 border-gray-800"
+          ></model-viewer>
         </li>
       {/each}
     </ul>

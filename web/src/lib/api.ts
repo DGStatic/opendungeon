@@ -37,6 +37,8 @@ export type APICellTexture = {
   updatedAt: number;
 };
 
+export type APIDecoration = APICellTexture
+
 export type APILevelMetaData = {
   id: string;
   name: string;

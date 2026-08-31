@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -31,9 +32,9 @@ func CreateDecoration(
 		return models.Decoration{}, ErrValidationFailure
 	}
 
-	decoder := gltf.NewDecoder(content)
 	var doc gltf.Document
-	if err := decoder.Decode(&doc); err != nil {
+	var buf bytes.Buffer
+	if err := gltf.NewDecoder(io.TeeReader(content, &buf)).Decode(&doc); err != nil {
 		return models.Decoration{}, ErrUnsupportedFormat
 	}
 
@@ -43,8 +44,13 @@ func CreateDecoration(
 		return models.Decoration{}, ErrDatabaseFailure
 	}
 
-	size, err := io.Copy(fout, content)
+	size, err := io.Copy(fout, io.MultiReader(&buf, content))
+	if cerr := fout.Close(); err == nil {
+		err = cerr
+	}
 	if err != nil {
+		_ = storage.Remove(mediaID.String())
+
 		slog.Error("failed to store decoration", "error", err)
 		return models.Decoration{}, ErrStorageFailure
 	}
