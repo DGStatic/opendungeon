@@ -32,10 +32,12 @@
     body.append("displayName", displayName);
     body.append("file", file);
 
+    console.log(file.type)
+
     const res = await callAPI(
       fetch,
       "POST",
-      file.type === "" ? "/admin/decorations" : "/admin/cell-textures",
+      file.type.includes("gltf") || file.type === "" ? "/admin/decorations" : "/admin/cell-textures",
       { body },
     );
     if (!res.ok) {
