@@ -2,6 +2,7 @@ import {
   callAPI,
   type APICellTexture,
   type APICharacter,
+  type APIDecoration,
   type APIGame,
   type APILevel,
 } from "$lib/api";
@@ -11,8 +12,9 @@ import type { PageLoad } from "./$types";
 export const prerender = false;
 
 export const load: PageLoad = async ({ fetch, params, parent }) => {
-  const [cellTextureRes, charactersRes, gameRes] = await Promise.all([
+  const [cellTextureRes, decorationRes, charactersRes, gameRes] = await Promise.all([
     callAPI(fetch, "GET", "/cell-textures"),
+    callAPI(fetch, "GET", "/decorations"),
     callAPI(fetch, "GET", "/characters"),
     callAPI(fetch, "GET", "/games/" + params.id),
   ]);
@@ -24,6 +26,12 @@ export const load: PageLoad = async ({ fetch, params, parent }) => {
   if (cellTextures.length < 1) {
     error(500, "instance has no cell textures");
   }
+
+  if (!decorationRes.ok) {
+    error(500, decorationRes.error.message);
+  }
+
+  const decorations: APIDecoration[] = await decorationRes.data.json();
 
   if (!gameRes.ok) {
     error(500, gameRes.error.message);
@@ -54,6 +62,7 @@ export const load: PageLoad = async ({ fetch, params, parent }) => {
   return {
     profile,
     cellTextures,
+    decorations,
     game,
     levels,
     characters,

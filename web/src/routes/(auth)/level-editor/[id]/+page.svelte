@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { callAPI, getMediaUrl, type APICellTexture, type APILevelData } from "$lib/api";
+  import {
+    callAPI,
+    getMediaUrl,
+    type APICellTexture,
+    type APIDecoration,
+    type APILevelData,
+  } from "$lib/api";
   import Controller, {
     type GameMouseMoveEvent,
     type GameMousePressEvent,
@@ -7,7 +13,7 @@
     type GameMouseScrollEvent,
     MouseButton,
   } from "$lib/controller";
-  import { Cartesian } from "$lib/point";
+  import { Cartesian, degToRad } from "$lib/point";
   import Rectangle from "$lib/rectangle";
   import Renderer from "$lib/renderer";
   import { OrthographicCamera, type Camera } from "$lib/renderer/camera";
@@ -20,6 +26,8 @@
   import { goto } from "$app/navigation";
   import assert from "$lib/assert";
   import "@google/model-viewer";
+  import DynamicGLTF from "$lib/renderer/gltf/dynamic";
+  import type InstanceGLTF from "$lib/renderer/gltf/instance";
 
   const GRID_WIDTH = 256;
   const GRID_HEIGHT = 256;
@@ -30,6 +38,7 @@
   let levelId = $derived<string>(data.level.id);
   let levelName = $derived<string>(data.level.name ?? "");
   let selectedTexture = $state<string | null>(null);
+  let selectedDecoration = $state<string | null>(null);
   let loading = $state(true);
   let controller: Controller;
   let renderer: Renderer;
@@ -40,6 +49,8 @@
   let dragStartCoord: Cartesian | null = null;
   let dragCurrentCoord: Cartesian | null = null;
   let rectId: number;
+  const decorationModelLookup: Record<string, number> = {};
+  let lastPlacedDecoration: InstanceGLTF | null = null;
 
   onMount(() => {
     controller = new Controller(canvas!);
@@ -65,9 +76,11 @@
     const textureMediaLookup = data.cellTextures.reduce<Record<string, string>>((prev, curr) => {
       return { ...prev, [curr.key]: curr.mediaId };
     }, {});
+    const decorationMediaLookup = data.decorations.reduce<Record<string, string>>((prev, curr) => {
+      return { ...prev, [curr.key]: curr.mediaId };
+    }, {});
 
-    console.log(getMediaUrl(data.decorations[0].mediaId));
-
+    // load textures, then decorations to avoid melding
     Promise.all(
       levelData.textures.map((texture) => {
         const uri = getMediaUrl(textureMediaLookup[texture]);
@@ -75,8 +88,41 @@
           mode: "nearest",
         });
       }),
-    ).then(() => (loading = false));
-    // TODO: load decorations
+    ).then(() =>
+      Promise.all(
+        levelData.decorations.map(async (decoration) => {
+          const res = await callAPI(
+            fetch,
+            "GET",
+            "/media/" + decorationMediaLookup[decoration] + "/content",
+          );
+
+          if (!res.ok) {
+            assert(false, "load media failed");
+            return;
+          }
+
+          const src = await res.data.json();
+          const modelId = await renderer.createDynamicGLTFElement(src);
+          decorationModelLookup[decoration] = modelId;
+        }),
+      ).then(() => {
+        for (let row = 0; row < levelData.grid.length; row++) {
+          for (let col = 0; col < levelData.grid[row].length; col++) {
+            const cell = levelData.grid[row][col];
+            if (!cell || cell.decoration < 0) {
+              continue;
+            }
+
+            createDecorationInstance(
+              levelData.decorations[cell.decoration],
+              new Cartesian(col, row),
+            );
+          }
+        }
+        loading = false;
+      }),
+    );
 
     loop();
 
@@ -131,7 +177,7 @@
         }
 
         const texture = cell.texture;
-        if (texture < 0) {
+        if (texture === undefined || texture === null || texture < 0) {
           continue;
         }
 
@@ -214,6 +260,13 @@
         rect.draw();
       }
     }
+
+    // draw the decorations
+    for (const decoration of levelData.decorations) {
+      const model = renderer.getAndUseElement<DynamicGLTF>(decorationModelLookup[decoration]);
+      model.setCamera(camera);
+      model.draw();
+    }
   }
 
   function handleClear() {
@@ -221,8 +274,40 @@
   }
 
   function handlePress(event: GameMousePressEvent) {
-    input = { type: "dragging", button: event.button };
-    dragStartCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
+    if (selectedDecoration && event.button !== MouseButton.Middle) {
+      if (event.button === MouseButton.Left) {
+        if (!levelData.decorations.includes(selectedDecoration)) {
+          levelData.decorations.push(selectedDecoration);
+        }
+
+        const decorationIndex = levelData.decorations.findIndex(
+          (decoration) => decoration === selectedDecoration,
+        );
+        assert(decorationIndex !== -1, "Failed to insert and find decoration");
+
+        const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
+        if (levelData.grid[coord.y][coord.x]?.decoration === decorationIndex) {
+          return;
+        }
+        levelData.grid[coord.y][coord.x] = {
+          decoration: decorationIndex,
+          texture: levelData.grid[coord.y][coord.x]?.texture ?? -1,
+        };
+
+        lastPlacedDecoration = createDecorationInstance(selectedDecoration, coord);
+      } else if (event.button === MouseButton.Right) {
+        if (lastPlacedDecoration) {
+          GLM.mat4.rotateY(
+            lastPlacedDecoration.transform,
+            lastPlacedDecoration.transform,
+            degToRad(45),
+          );
+        }
+      }
+    } else {
+      input = { type: "dragging", button: event.button };
+      dragStartCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
+    }
   }
 
   function handleRelease(event: GameMouseReleaseEvent) {
@@ -305,6 +390,37 @@
     }
   }
 
+  async function handleLoadDecoration(decoration: APIDecoration) {
+    if (levelData.decorations.includes(decoration.key)) {
+      return;
+    }
+
+    const res = await callAPI(fetch, "GET", "/media/" + decoration.mediaId + "/content");
+
+    if (!res.ok) {
+      assert(false, "load media failed");
+      return;
+    }
+
+    const src = await res.data.json();
+    const modelId = await renderer.createDynamicGLTFElement(src);
+    decorationModelLookup[decoration.key] = modelId;
+    levelData.decorations.push(decoration.key);
+  }
+
+  function createDecorationInstance(key: string, coord: Cartesian): InstanceGLTF {
+    const model = renderer.getElement<DynamicGLTF>(decorationModelLookup[key]);
+    const instance = model.createInstance();
+    const transform = GLM.mat4.create();
+    GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(coord.x, coord.y, 0.1));
+    GLM.mat4.rotateX(transform, transform, degToRad(90)); // TODO: When we get actual assets, we should be able to remove rotate and scale
+    GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(0.5, 0.5, 0.5));
+    instance.transform = transform;
+    instance.updateTransforms();
+    instance.computeSkinningMatrix();
+    return instance;
+  }
+
   async function handleSaveLevel(event: SubmitEvent) {
     event.preventDefault();
 
@@ -346,6 +462,7 @@
             data-selected={cellTexture.key === selectedTexture}
             class="data-[selected=true]:text-blue-500 group"
             onclick={() => {
+              selectedDecoration = null;
               handleLoadTexture(cellTexture).then(() => {
                 selectedTexture = cellTexture.key;
               });
@@ -365,15 +482,32 @@
     <ul class="grid justify-start">
       {#each data.decorations as decoration, i (i)}
         <li>
-          <model-viewer
-            src={getMediaUrl(decoration.mediaId)}
-            alt={decoration.displayName}
-            auto-rotate
-            auto-rotate-delay="0"
-            rotation-per-second="60deg"
-            disable-zoom
-            class="size-16 border-2 border-gray-800"
-          ></model-viewer>
+          <button
+            data-selected={decoration.key === selectedDecoration}
+            class="group"
+            onclick={() => {
+              if (selectedDecoration === decoration.key) {
+                selectedDecoration = null;
+              } else {
+                loading = true;
+                handleLoadDecoration(decoration).then(() => {
+                  loading = false;
+                  selectedDecoration = decoration.key;
+                });
+              }
+            }}
+          >
+            <span class="sr-only">{decoration.displayName}</span>
+            <model-viewer
+              src={getMediaUrl(decoration.mediaId)}
+              alt={decoration.displayName}
+              auto-rotate
+              auto-rotate-delay="0"
+              rotation-per-second="60deg"
+              disable-zoom
+              class="size-16 border-2 border-gray-800 group-data-[selected=true]:border-gray-200"
+            ></model-viewer>
+          </button>
         </li>
       {/each}
     </ul>

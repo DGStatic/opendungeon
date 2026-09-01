@@ -68,6 +68,7 @@
   let frameHandle = -1;
   let input: { type: "none" } | { type: "dragging"; button: number } = { type: "none" };
   let rectId: number;
+  const decorationModelLookup: Record<string, number> = {};
 
   function getMessageId() {
     const id = messageIdHandle;
@@ -188,8 +189,14 @@
             },
             {},
           );
+          const decorationMediaLookup = data.decorations.reduce<Record<string, string>>(
+            (prev, curr) => {
+              return { ...prev, [curr.key]: curr.mediaId };
+            },
+            {},
+          );
 
-          Promise.all(
+          await Promise.all(
             levelData.textures.map(async (texture) => {
               const uri = getMediaUrl(textureMediaLookup[texture]);
               return renderer
@@ -203,7 +210,50 @@
                   throw e;
                 });
             }),
+          );
+
+          Promise.all(
+            levelData.decorations.map(async (decoration) => {
+              const res = await callAPI(
+                fetch,
+                "GET",
+                "/media/" + decorationMediaLookup[decoration] + "/content",
+              );
+
+              if (!res.ok) {
+                assert(false, "load media failed");
+                return;
+              }
+
+              const src = await res.data.json();
+              const modelId = await renderer.createDynamicGLTFElement(src);
+              decorationModelLookup[decoration] = modelId;
+              const model = renderer.getAndUseElement<DynamicGLTF>(modelId);
+              for (let row = 0; row < levelData!.grid.length; row++) {
+                for (let col = 0; col < levelData!.grid[row].length; col++) {
+                  const cell = levelData!.grid[row][col];
+                  if (!cell) {
+                    continue;
+                  }
+
+                  const decorationIndex = levelData?.decorations.findIndex((d) => d === decoration);
+                  if (levelData?.grid[row][col]?.decoration !== decorationIndex) {
+                    continue;
+                  }
+
+                  const instance = model.createInstance();
+                  const transform = GLM.mat4.create();
+                  GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(col, row, 0));
+                  GLM.mat4.rotateX(transform, transform, degToRad(90)); // TODO: When we get actual assets, we should be able to remove rotate and scale
+                  GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(0.5, 0.5, 0.5));
+                  instance.transform = transform;
+                  instance.updateTransforms();
+                  instance.computeSkinningMatrix();
+                }
+              }
+            }),
           ).then(() => (loading = false));
+
           break;
         }
       }
@@ -290,6 +340,13 @@
         buffer.set(new Float32Array([1, 1, 1, 1]), offset + model.length);
       }
       rect.draw();
+    }
+
+    // draw the decorations
+    for (const decoration of levelData.decorations) {
+      const model = renderer.getAndUseElement<DynamicGLTF>(decorationModelLookup[decoration]);
+      model.setCamera(camera);
+      model.draw();
     }
 
     // draw pings
