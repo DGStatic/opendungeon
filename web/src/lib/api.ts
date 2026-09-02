@@ -54,7 +54,7 @@ export type APILevelData = {
     texture: number; // -1 indicates empty
     decoration: {
       index: number;
-      rotation: number // degrees on Y axis
+      rotation: number; // degrees on Y axis
     };
   } | null)[][];
 };
