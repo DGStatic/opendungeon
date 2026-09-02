@@ -481,7 +481,7 @@
   <div
     class="relative z-10 grid justify-start gap-4 top-4 left-4 bg-aurora-gray-1400 border-2 border-aurora-gray-1200 p-4 rounded"
   >
-    <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-3 max-w-64 md:max-w-full">
       <StyledButton onclick={() => goto(resolve("/dashboard"))} label="Exit" class="w-min px-4" />
       <form onsubmit={handleSaveLevel} class="flex gap-2">
         <StyledInput type="text" placeholder="Level Name" bind:value={levelName} />
