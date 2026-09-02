@@ -28,6 +28,8 @@
   import "@google/model-viewer";
   import DynamicGLTF from "$lib/renderer/gltf/dynamic";
   import type InstanceGLTF from "$lib/renderer/gltf/instance";
+  import StyledButton from "$lib/components/StyledButton.svelte";
+  import StyledInput from "$lib/components/StyledInput.svelte";
 
   const GRID_WIDTH = 256;
   const GRID_HEIGHT = 256;
@@ -50,6 +52,7 @@
   let dragCurrentCoord: Cartesian | null = null;
   let rectId: number;
   const decorationModelLookup: Record<string, number> = {};
+  const decorationInstanceByCell: Record<number, InstanceGLTF> = {};
   let lastPlacedDecoration: InstanceGLTF | null = null;
 
   onMount(() => {
@@ -114,10 +117,7 @@
               continue;
             }
 
-            createDecorationInstance(
-              levelData.decorations[cell.decoration],
-              new Cartesian(col, row),
-            );
+            createDecorationInstance(levelData.decorations[cell.decoration], col, row);
           }
         }
         loading = false;
@@ -286,17 +286,26 @@
         assert(decorationIndex !== -1, "Failed to insert and find decoration");
 
         const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
-        if (levelData.grid[coord.y][coord.x]?.decoration === decorationIndex) {
+        if (
+          coord.x < 0 ||
+          coord.x >= GRID_WIDTH ||
+          coord.y < 0 ||
+          coord.y >= GRID_HEIGHT ||
+          levelData.grid[coord.y][coord.x]?.decoration === decorationIndex
+        ) {
           return;
         }
+
+        const cell = levelData.grid[coord.y][coord.x];
         levelData.grid[coord.y][coord.x] = {
           decoration: decorationIndex,
-          texture: levelData.grid[coord.y][coord.x]?.texture ?? -1,
+          texture: cell ? cell.texture : -1,
         };
 
-        lastPlacedDecoration = createDecorationInstance(selectedDecoration, coord);
+        lastPlacedDecoration = createDecorationInstance(selectedDecoration, coord.x, coord.y);
       } else if (event.button === MouseButton.Right) {
         if (lastPlacedDecoration) {
+          // TODO: Save transformation data with decorations
           GLM.mat4.rotateY(
             lastPlacedDecoration.transform,
             lastPlacedDecoration.transform,
@@ -332,10 +341,10 @@
                 (texture) => texture === selectedTexture,
               );
               assert(textureIndex !== -1, "Failed to insert and find texture");
-
+              const cell = levelData.grid[y][x];
               levelData.grid[y][x] = {
                 texture: textureIndex,
-                decoration: -1,
+                decoration: cell ? cell.decoration : -1,
               };
             }
           }
@@ -346,6 +355,7 @@
               if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
                 continue;
               }
+              deleteDecorationInstance(x, y);
               levelData.grid[y][x] = null;
             }
           }
@@ -408,17 +418,36 @@
     levelData.decorations.push(decoration.key);
   }
 
-  function createDecorationInstance(key: string, coord: Cartesian): InstanceGLTF {
+  function getCellKey(x: number, y: number): number {
+    return y * GRID_WIDTH + x;
+  }
+
+  function createDecorationInstance(key: string, x: number, y: number): InstanceGLTF {
     const model = renderer.getElement<DynamicGLTF>(decorationModelLookup[key]);
     const instance = model.createInstance();
     const transform = GLM.mat4.create();
-    GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(coord.x, coord.y, 0.1));
-    GLM.mat4.rotateX(transform, transform, degToRad(90)); // TODO: When we get actual assets, we should be able to remove rotate and scale
+    GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, 0.1));
+    GLM.mat4.rotateX(transform, transform, degToRad(90)); // TODO: When we get prepared assets, we should be able to remove rotate and scale
     GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(0.5, 0.5, 0.5));
     instance.transform = transform;
     instance.updateTransforms();
     instance.computeSkinningMatrix();
+    decorationInstanceByCell[getCellKey(x, y)] = instance;
     return instance;
+  }
+
+  function deleteDecorationInstance(x: number, y: number) {
+    const key = getCellKey(x, y);
+    const instance = decorationInstanceByCell[key];
+    if (!instance) {
+      return;
+    }
+
+    instance.model.deleteInstance(instance);
+    delete decorationInstanceByCell[key];
+    if (lastPlacedDecoration === instance) {
+      lastPlacedDecoration = null;
+    }
   }
 
   async function handleSaveLevel(event: SubmitEvent) {
@@ -449,68 +478,82 @@
 
 <main class="relative grid justify-start">
   <canvas class="absolute inset-0 bg-white" bind:this={canvas}></canvas>
-  <div class="relative z-10 grid justify-start">
-    <button onclick={() => goto(resolve("/dashboard"))}>Exit</button>
-    <form onsubmit={handleSaveLevel}>
-      <input type="text" placeholder="Level Name" bind:value={levelName} />
-      <button>Save</button>
-    </form>
-    <ul class="grid justify-start">
-      {#each data.cellTextures as cellTexture, i (i)}
-        <li class="grid justify-start">
-          <button
-            data-selected={cellTexture.key === selectedTexture}
-            class="data-[selected=true]:text-blue-500 group"
-            onclick={() => {
-              selectedDecoration = null;
-              handleLoadTexture(cellTexture).then(() => {
-                selectedTexture = cellTexture.key;
-              });
-            }}
-          >
-            <img
-              alt={cellTexture.displayName}
-              src={getMediaUrl(cellTexture.mediaId)}
-              width={128}
-              height={128}
-              class="texture border-2 border-gray-800 group-data-[selected=true]:border-gray-200"
-            />
-          </button>
-        </li>
-      {/each}
-    </ul>
-    <ul class="grid justify-start">
-      {#each data.decorations as decoration, i (i)}
-        <li>
-          <button
-            data-selected={decoration.key === selectedDecoration}
-            class="group"
-            onclick={() => {
-              if (selectedDecoration === decoration.key) {
+  <div
+    class="relative z-10 grid justify-start gap-4 top-4 left-4 bg-aurora-gray-1400 border-2 border-aurora-gray-1200 p-4 rounded"
+  >
+    <div class="flex flex-col gap-3">
+      <StyledButton onclick={() => goto(resolve("/dashboard"))} label="Exit" class="w-min px-4" />
+      <form onsubmit={handleSaveLevel} class="flex gap-2">
+        <StyledInput type="text" placeholder="Level Name" bind:value={levelName} />
+        <StyledButton label="Save" class="w.min px-4" />
+      </form>
+    </div>
+
+    <div class="grid gap-2">
+      <h2 class="text-center">Textures</h2>
+      <ul class="grid grid-cols-3 justify-center">
+        {#each data.cellTextures as cellTexture, i (i)}
+          <li class="grid justify-center">
+            <button
+              data-selected={cellTexture.key === selectedTexture}
+              class="data-[selected=true]:text-blue-500 group"
+              onclick={() => {
                 selectedDecoration = null;
-              } else {
-                loading = true;
-                handleLoadDecoration(decoration).then(() => {
-                  loading = false;
-                  selectedDecoration = decoration.key;
+                handleLoadTexture(cellTexture).then(() => {
+                  selectedTexture = cellTexture.key;
                 });
-              }
-            }}
-          >
-            <span class="sr-only">{decoration.displayName}</span>
-            <model-viewer
-              src={getMediaUrl(decoration.mediaId)}
-              alt={decoration.displayName}
-              auto-rotate
-              auto-rotate-delay="0"
-              rotation-per-second="60deg"
-              disable-zoom
-              class="size-16 border-2 border-gray-800 group-data-[selected=true]:border-gray-200"
-            ></model-viewer>
-          </button>
-        </li>
-      {/each}
-    </ul>
+              }}
+            >
+              <img
+                alt={cellTexture.displayName}
+                src={getMediaUrl(cellTexture.mediaId)}
+                width={64}
+                height={64}
+                class="texture border-2 border-gray-800 group-data-[selected=true]:border-gray-200 hover:border-aurora-gray-200 rounded"
+              />
+            </button>
+          </li>
+        {/each}
+      </ul>
+    </div>
+
+    <div class="grid gap-2">
+      <h2 class="text-center">Decorations</h2>
+      <ul class="grid grid-cols-3">
+        {#each data.decorations as decoration, i (i)}
+          <li class="grid justify-center">
+            <button
+              data-selected={decoration.key === selectedDecoration}
+              class="group"
+              onclick={() => {
+                if (selectedDecoration === decoration.key) {
+                  selectedDecoration = null;
+                } else {
+                  loading = true;
+                  selectedTexture = null;
+
+                  handleLoadDecoration(decoration).then(() => {
+                    loading = false;
+                    selectedDecoration = decoration.key;
+                  });
+                }
+              }}
+            >
+              <span class="sr-only">{decoration.displayName}</span>
+              <model-viewer
+                src={getMediaUrl(decoration.mediaId)}
+                alt={decoration.displayName}
+                auto-rotate
+                auto-rotate-delay="0"
+                rotation-per-second="60deg"
+                disable-zoom
+                class="size-16 border-2 border-gray-800 group-data-[selected=true]:border-gray-200 hover:border-aurora-gray-200 rounded"
+              ></model-viewer>
+            </button>
+          </li>
+        {/each}
+      </ul>
+    </div>
   </div>
 </main>
 

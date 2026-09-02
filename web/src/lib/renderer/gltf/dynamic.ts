@@ -396,6 +396,14 @@ export default class DynamicGLTF implements RenderElement {
     return instance;
   }
 
+  deleteInstance(instance: InstanceGLTF) {
+    const index = this.instances.indexOf(instance);
+    if (index === -1) {
+      return;
+    }
+    this.instances.splice(index, 1);
+  }
+
   draw() {
     if (this.instances.length <= 0) {
       return;
