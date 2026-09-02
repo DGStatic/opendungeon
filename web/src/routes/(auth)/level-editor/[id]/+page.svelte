@@ -53,7 +53,7 @@
   let rectId: number;
   const decorationModelLookup: Record<string, number> = {};
   const decorationInstanceByCell: Record<number, InstanceGLTF> = {};
-  let lastPlacedDecoration: InstanceGLTF | null = null;
+  let lastPlacedDecoration: { cell: Cartesian; instance: InstanceGLTF } | null = null;
 
   onMount(() => {
     controller = new Controller(canvas!);
@@ -71,6 +71,8 @@
           decorations: [],
           grid: Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_HEIGHT).fill(null)),
         };
+
+    console.log(levelData.grid[0][0]);
 
     rectId = renderer.createElement(Rectangle);
 
@@ -113,11 +115,16 @@
         for (let row = 0; row < levelData.grid.length; row++) {
           for (let col = 0; col < levelData.grid[row].length; col++) {
             const cell = levelData.grid[row][col];
-            if (!cell || cell.decoration < 0) {
+            if (!cell || cell.decoration.index < 0) {
               continue;
             }
 
-            createDecorationInstance(levelData.decorations[cell.decoration], col, row);
+            createDecorationInstance(
+              levelData.decorations[cell.decoration.index],
+              col,
+              row,
+              cell.decoration.rotation,
+            );
           }
         }
         loading = false;
@@ -291,26 +298,39 @@
           coord.x >= GRID_WIDTH ||
           coord.y < 0 ||
           coord.y >= GRID_HEIGHT ||
-          levelData.grid[coord.y][coord.x]?.decoration === decorationIndex
+          levelData.grid[coord.y][coord.x]?.decoration?.index === decorationIndex
         ) {
           return;
         }
 
         const cell = levelData.grid[coord.y][coord.x];
         levelData.grid[coord.y][coord.x] = {
-          decoration: decorationIndex,
+          decoration: {
+            index: decorationIndex,
+            rotation: 0,
+          },
           texture: cell ? cell.texture : -1,
         };
 
-        lastPlacedDecoration = createDecorationInstance(selectedDecoration, coord.x, coord.y);
+        lastPlacedDecoration = {
+          cell: coord,
+          instance: createDecorationInstance(selectedDecoration, coord.x, coord.y, 0),
+        };
       } else if (event.button === MouseButton.Right) {
         if (lastPlacedDecoration) {
           // TODO: Save transformation data with decorations
           GLM.mat4.rotateY(
-            lastPlacedDecoration.transform,
-            lastPlacedDecoration.transform,
+            lastPlacedDecoration.instance.transform,
+            lastPlacedDecoration.instance.transform,
             degToRad(45),
           );
+          const cell = levelData.grid[lastPlacedDecoration.cell.y][lastPlacedDecoration.cell.x];
+          assert(!!cell, "last placed decoration's cell doesn't exist.");
+          cell!.decoration.rotation += 45;
+          levelData.grid[lastPlacedDecoration.cell.y][lastPlacedDecoration.cell.x] = {
+            decoration: cell!.decoration,
+            texture: cell!.texture,
+          };
         }
       }
     } else {
@@ -344,7 +364,10 @@
               const cell = levelData.grid[y][x];
               levelData.grid[y][x] = {
                 texture: textureIndex,
-                decoration: cell ? cell.decoration : -1,
+                decoration: {
+                  index: cell ? cell.decoration.index : -1,
+                  rotation: cell ? cell.decoration.rotation : 0,
+                },
               };
             }
           }
@@ -422,12 +445,17 @@
     return y * GRID_WIDTH + x;
   }
 
-  function createDecorationInstance(key: string, x: number, y: number): InstanceGLTF {
+  function createDecorationInstance(
+    key: string,
+    x: number,
+    y: number,
+    rotation: number,
+  ): InstanceGLTF {
     const model = renderer.getElement<DynamicGLTF>(decorationModelLookup[key]);
     const instance = model.createInstance();
     const transform = GLM.mat4.create();
     GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, 0.1));
-    GLM.mat4.rotateX(transform, transform, degToRad(90)); // TODO: When we get prepared assets, we should be able to remove rotate and scale
+    GLM.mat4.rotateY(transform, transform, degToRad(rotation));
     GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(0.5, 0.5, 0.5));
     instance.transform = transform;
     instance.updateTransforms();
@@ -445,14 +473,14 @@
 
     instance.model.deleteInstance(instance);
     delete decorationInstanceByCell[key];
-    if (lastPlacedDecoration === instance) {
+    if (lastPlacedDecoration?.instance === instance) {
       lastPlacedDecoration = null;
     }
   }
 
   async function handleSaveLevel(event: SubmitEvent) {
     event.preventDefault();
-
+    console.log(levelData.grid[0][0]);
     const body = JSON.stringify({ name: levelName, level: levelData });
     const res = await callAPI(fetch, "PUT", "/levels/" + levelId, { body });
     if (!res.ok) {

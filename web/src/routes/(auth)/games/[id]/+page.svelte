@@ -232,19 +232,19 @@
               for (let row = 0; row < levelData!.grid.length; row++) {
                 for (let col = 0; col < levelData!.grid[row].length; col++) {
                   const cell = levelData!.grid[row][col];
-                  if (!cell) {
+                  if (!cell || cell.decoration.index < 0) {
                     continue;
                   }
 
                   const decorationIndex = levelData?.decorations.findIndex((d) => d === decoration);
-                  if (levelData?.grid[row][col]?.decoration !== decorationIndex) {
+                  if (levelData?.grid[row][col]?.decoration.index !== decorationIndex) {
                     continue;
                   }
 
                   const instance = model.createInstance();
                   const transform = GLM.mat4.create();
                   GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(col, row, 0));
-                  GLM.mat4.rotateX(transform, transform, degToRad(90)); // TODO: When we get actual assets, we should be able to remove rotate and scale
+                  GLM.mat4.rotateY(transform, transform, degToRad(cell.decoration.rotation));
                   GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(0.5, 0.5, 0.5));
                   instance.transform = transform;
                   instance.updateTransforms();
@@ -312,7 +312,7 @@
         }
 
         const texture = cell.texture;
-        if (texture === undefined || texture === null) {
+        if (texture === undefined || texture === null || texture < 0) {
           continue;
         }
 
@@ -375,8 +375,6 @@
       model.setCamera(camera);
       model.draw();
     }
-
-    console.log("finished drawing");
   }
 
   function handleLoadLevel(levelId: string) {

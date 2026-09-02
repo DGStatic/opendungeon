@@ -52,7 +52,10 @@ export type APILevelData = {
   decorations: string[];
   grid: ({
     texture: number; // -1 indicates empty
-    decoration: number;
+    decoration: {
+      index: number;
+      rotation: number // degrees on Y axis
+    };
   } | null)[][];
 };
 
