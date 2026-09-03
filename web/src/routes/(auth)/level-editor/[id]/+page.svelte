@@ -30,6 +30,7 @@
   import type InstanceGLTF from "$lib/renderer/gltf/instance";
   import StyledButton from "$lib/components/StyledButton.svelte";
   import StyledInput from "$lib/components/StyledInput.svelte";
+  import ModelViewer from "$lib/components/ModelViewer.svelte";
 
   const GRID_WIDTH = 256;
   const GRID_HEIGHT = 256;
@@ -566,15 +567,11 @@
               }}
             >
               <span class="sr-only">{decoration.displayName}</span>
-              <model-viewer
-                src={getMediaUrl(decoration.mediaId)}
-                alt={decoration.displayName}
-                auto-rotate
-                auto-rotate-delay="0"
-                rotation-per-second="60deg"
-                disable-zoom
+              <ModelViewer
+              autoRotate={true}
+                mediaId={decoration.mediaId}
                 class="size-16 border-2 border-gray-800 group-data-[selected=true]:border-gray-200 hover:border-aurora-gray-200 rounded"
-              ></model-viewer>
+              />
             </button>
           </li>
         {/each}
