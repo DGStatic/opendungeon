@@ -568,7 +568,7 @@
             >
               <span class="sr-only">{decoration.displayName}</span>
               <ModelViewer
-              autoRotate={true}
+                autoRotate={true}
                 mediaId={decoration.mediaId}
                 class="size-16 border-2 border-gray-800 group-data-[selected=true]:border-gray-200 hover:border-aurora-gray-200 rounded"
               />

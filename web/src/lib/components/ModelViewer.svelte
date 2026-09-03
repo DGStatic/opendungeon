@@ -9,7 +9,6 @@
   import { OrthographicCamera, type Camera } from "$lib/renderer/camera";
   import { callAPI } from "$lib/api";
   import assert from "assert";
-  import Page from "../../routes/(admin)/admin/+page.svelte";
 
   type Props = HTMLAttributes<HTMLCanvasElement> & {
     mediaId: string;
