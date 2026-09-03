@@ -543,7 +543,7 @@
       }
 
       const src = await res.data.json();
-      const modelId = await renderer.createDynamicGLTFElement(src);
+      const modelId = await renderer.createDynamicGLTFElement(src); // TODO: use static gltf
       const model = renderer.getElement<DynamicGLTF>(modelId);
       const instance = model.createInstance();
       const transform = GLM.mat4.create();

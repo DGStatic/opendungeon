@@ -37,7 +37,13 @@ export type APICellTexture = {
   updatedAt: number;
 };
 
-export type APIDecoration = APICellTexture;
+export type APIDecoration = {
+  key: string;
+  displayName: string;
+  mediaId: string;
+  createdAt: number;
+  updatedAt: number;
+};
 
 export type APILevelMetaData = {
   id: string;

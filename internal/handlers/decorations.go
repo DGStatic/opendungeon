@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -12,7 +11,6 @@ import (
 	"github.com/opendungeon/opendungeon/internal/repository"
 	"github.com/opendungeon/opendungeon/internal/storage"
 	"github.com/opendungeon/opendungeon/models"
-	"github.com/qmuntal/gltf"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 )
@@ -22,7 +20,7 @@ func CreateDecoration(
 	conn *sql.Conn,
 	userID uuid.UUID,
 	key, displayName string,
-	content io.Reader,
+	decorationModel io.Reader,
 ) (models.Decoration, error) {
 	if len(key) < 3 || 64 < len(key) {
 		return models.Decoration{}, ErrValidationFailure
@@ -32,19 +30,13 @@ func CreateDecoration(
 		return models.Decoration{}, ErrValidationFailure
 	}
 
-	var doc gltf.Document
-	var buf bytes.Buffer
-	if err := gltf.NewDecoder(io.TeeReader(content, &buf)).Decode(&doc); err != nil {
-		return models.Decoration{}, ErrUnsupportedFormat
-	}
-
 	mediaID := uuid.New()
 	fout, err := storage.Create(mediaID.String())
 	if err != nil {
 		return models.Decoration{}, ErrDatabaseFailure
 	}
 
-	size, err := io.Copy(fout, io.MultiReader(&buf, content))
+	size, err := io.Copy(fout, decorationModel)
 	if cerr := fout.Close(); err == nil {
 		err = cerr
 	}

@@ -106,7 +106,7 @@
           }
 
           const src = await res.data.json();
-          const modelId = await renderer.createDynamicGLTFElement(src);
+          const modelId = await renderer.createDynamicGLTFElement(src); // TODO: use static gltf
           decorationModelLookup[decoration] = modelId;
         }),
       ).then(() => {
@@ -434,7 +434,7 @@
     }
 
     const src = await res.data.json();
-    const modelId = await renderer.createDynamicGLTFElement(src);
+    const modelId = await renderer.createDynamicGLTFElement(src); // TODO: use static gltf
     decorationModelLookup[decoration.key] = modelId;
     levelData.decorations.push(decoration.key);
   }

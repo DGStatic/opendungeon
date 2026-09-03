@@ -17,7 +17,7 @@ import (
 //	@Produce		json
 //	@Param			key			formData	string							true	"Decoration key"
 //	@Param			displayName	formData	string							true	"Decoration display name"
-//	@Param			file		formData	file							true	"GLTF 2.0 file"
+//	@Param			file		formData	file							true	"3D model file"
 //	@Success		201			{object}	database.CreateDecorationRow	"Newly created decoration details"
 //	@Failure		400			{string}	string							"Bad request"
 //	@Failure		415			{string}	string							"Unsupported media type"
