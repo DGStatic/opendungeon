@@ -59,7 +59,7 @@ func CreateDecoration(
 
 	_, err = repo.CreateMedia(ctx, repository.CreateMediaParams{
 		Uuid:        mediaID,
-		ContentType: "application/json",
+		ContentType: "model/gltf+json",
 		Size:        size,
 		UserUuid:    userID,
 	})
