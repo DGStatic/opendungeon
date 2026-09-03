@@ -455,6 +455,7 @@
     const instance = model.createInstance();
     const transform = GLM.mat4.create();
     GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, 0.1));
+    GLM.mat4.rotateX(transform, transform, degToRad(90));
     GLM.mat4.rotateY(transform, transform, degToRad(rotation));
     instance.transform = transform;
     instance.updateTransforms();
