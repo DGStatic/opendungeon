@@ -456,7 +456,6 @@
     const transform = GLM.mat4.create();
     GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, 0.1));
     GLM.mat4.rotateY(transform, transform, degToRad(rotation));
-    GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(0.5, 0.5, 0.5));
     instance.transform = transform;
     instance.updateTransforms();
     instance.computeSkinningMatrix();
