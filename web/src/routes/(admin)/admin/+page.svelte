@@ -32,8 +32,6 @@
     body.append("displayName", displayName);
     body.append("file", file);
 
-    console.log(file.type);
-
     const res = await callAPI(
       fetch,
       "POST",

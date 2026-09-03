@@ -72,8 +72,6 @@
           grid: Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_HEIGHT).fill(null)),
         };
 
-    console.log(levelData.grid[0][0]);
-
     rectId = renderer.createElement(Rectangle);
 
     renderer.loadTexture("system.plain", new Texture(1, 1));
@@ -480,7 +478,7 @@
 
   async function handleSaveLevel(event: SubmitEvent) {
     event.preventDefault();
-    console.log(levelData.grid[0][0]);
+
     const body = JSON.stringify({ name: levelName, level: levelData });
     const res = await callAPI(fetch, "PUT", "/levels/" + levelId, { body });
     if (!res.ok) {
