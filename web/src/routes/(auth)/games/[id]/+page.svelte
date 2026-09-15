@@ -32,8 +32,8 @@
   import { GameMenuTool } from "$lib/game";
   import GameToolMenu from "$lib/components/GameToolMenu.svelte";
   import Animator from "$lib/renderer/animator";
-  import type InstanceGLTF from "$lib/renderer/model/instance";
-  import DynamicGLTF from "$lib/renderer/model/dynamic";
+  import ModelInstance from "$lib/renderer/model/instance";
+  import DynamicModel from "$lib/renderer/model/dynamic";
 
   let { data }: PageProps = $props();
 
@@ -57,7 +57,7 @@
   let pings: Record<number, { point: Cartesian; opacity: number }> = {};
   let characters: {
     modelId: number;
-    instance: InstanceGLTF;
+    instance: ModelInstance;
   }[] = [];
   let pendingMessages: Message[] = [];
   let controller: Controller;
@@ -214,21 +214,10 @@
 
           Promise.all(
             levelData.decorations.map(async (decoration) => {
-              const res = await callAPI(
-                fetch,
-                "GET",
-                "/media/" + decorationMediaLookup[decoration] + "/content",
-              );
-
-              if (!res.ok) {
-                assert(false, "load media failed");
-                return;
-              }
-
-              const src = await res.data.json();
-              const modelId = await renderer.createDynamicGLTFElement(src);
+              const uri = getMediaUrl(decorationMediaLookup[decoration]);
+              const modelId = await renderer.createDynamicGLBElement(uri);
               decorationModelLookup[decoration] = modelId;
-              const model = renderer.getAndUseElement<DynamicGLTF>(modelId);
+              const model = renderer.getAndUseElement<DynamicModel>(modelId);
               for (let row = 0; row < levelData!.grid.length; row++) {
                 for (let col = 0; col < levelData!.grid[row].length; col++) {
                   const cell = levelData!.grid[row][col];
@@ -344,7 +333,7 @@
 
     // draw the decorations
     for (const decoration of levelData.decorations) {
-      const model = renderer.getAndUseElement<DynamicGLTF>(decorationModelLookup[decoration]);
+      const model = renderer.getAndUseElement<DynamicModel>(decorationModelLookup[decoration]);
       model.setCamera(camera);
       model.draw();
     }
@@ -371,7 +360,7 @@
 
     // draw characters
     for (const character of characters) {
-      const model = renderer.getAndUseElement<DynamicGLTF>(character.modelId);
+      const model = renderer.getAndUseElement<DynamicModel>(character.modelId);
       model.setCamera(camera);
       model.draw();
     }
@@ -535,7 +524,7 @@
   async function handleLoadCharacter(mediaId: string, x: number, y: number) {
     const uri = getMediaUrl(mediaId);
     const modelId = await renderer.createDynamicGLBElement(uri);
-    const model = renderer.getElement<DynamicGLTF>(modelId);
+    const model = renderer.getElement<DynamicModel>(modelId);
     const instance = model.createInstance();
     const transform = GLM.mat4.create();
     GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, 0));

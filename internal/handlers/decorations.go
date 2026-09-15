@@ -51,7 +51,7 @@ func CreateDecoration(
 
 	_, err = repo.CreateMedia(ctx, repository.CreateMediaParams{
 		Uuid:        mediaID,
-		ContentType: "model/gltf+json",
+		ContentType: "model/gltf-binary",
 		Size:        size,
 		UserUuid:    userID,
 	})
@@ -77,7 +77,7 @@ func CreateDecoration(
 			}
 		}
 
-		slog.Error("failed to create decoration record", "error", err)
+		slog.Error("failed to create decoration", "error", err)
 		return models.Decoration{}, ErrDatabaseFailure
 	}
 

@@ -25,9 +25,8 @@
   import { resolve } from "$app/paths";
   import { goto } from "$app/navigation";
   import assert from "$lib/assert";
-  import "@google/model-viewer";
-  import DynamicGLTF from "$lib/renderer/gltf/dynamic";
-  import type InstanceGLTF from "$lib/renderer/gltf/instance";
+  import DynamicModel from "$lib/renderer/model/dynamic";
+  import ModelInstance from "$lib/renderer/model/instance";
   import StyledButton from "$lib/components/StyledButton.svelte";
   import StyledInput from "$lib/components/StyledInput.svelte";
   import ModelViewer from "$lib/components/ModelViewer.svelte";
@@ -53,8 +52,8 @@
   let dragCurrentCoord: Cartesian | null = null;
   let rectId: number;
   const decorationModelLookup: Record<string, number> = {};
-  const decorationInstanceByCell: Record<number, InstanceGLTF> = {};
-  let lastPlacedDecoration: { cell: Cartesian; instance: InstanceGLTF } | null = null;
+  const decorationInstanceByCell: Record<number, ModelInstance> = {};
+  let lastPlacedDecoration: { cell: Cartesian; instance: ModelInstance } | null = null;
 
   onMount(() => {
     controller = new Controller(canvas!);
@@ -95,19 +94,8 @@
     ).then(() =>
       Promise.all(
         levelData.decorations.map(async (decoration) => {
-          const res = await callAPI(
-            fetch,
-            "GET",
-            "/media/" + decorationMediaLookup[decoration] + "/content",
-          );
-
-          if (!res.ok) {
-            assert(false, "load media failed");
-            return;
-          }
-
-          const src = await res.data.json();
-          const modelId = await renderer.createDynamicGLTFElement(src); // TODO: use static gltf
+          const uri = getMediaUrl(decorationMediaLookup[decoration]);
+          const modelId = await renderer.createDynamicGLBElement(uri); // TODO: use static model
           decorationModelLookup[decoration] = modelId;
         }),
       ).then(() => {
@@ -269,7 +257,7 @@
 
     // draw the decorations
     for (const decoration of levelData.decorations) {
-      const model = renderer.getAndUseElement<DynamicGLTF>(decorationModelLookup[decoration]);
+      const model = renderer.getAndUseElement<DynamicModel>(decorationModelLookup[decoration]);
       model.setCamera(camera);
       model.draw();
     }
@@ -427,15 +415,8 @@
       return;
     }
 
-    const res = await callAPI(fetch, "GET", "/media/" + decoration.mediaId + "/content");
-
-    if (!res.ok) {
-      assert(false, "load media failed");
-      return;
-    }
-
-    const src = await res.data.json();
-    const modelId = await renderer.createDynamicGLTFElement(src); // TODO: use static gltf
+    const uri = getMediaUrl(decoration.mediaId);
+    const modelId = await renderer.createDynamicGLBElement(uri); // TODO: use static model
     decorationModelLookup[decoration.key] = modelId;
     levelData.decorations.push(decoration.key);
   }
@@ -449,8 +430,8 @@
     x: number,
     y: number,
     rotation: number,
-  ): InstanceGLTF {
-    const model = renderer.getElement<DynamicGLTF>(decorationModelLookup[key]);
+  ): ModelInstance {
+    const model = renderer.getElement<DynamicModel>(decorationModelLookup[key]);
     const instance = model.createInstance();
     const transform = GLM.mat4.create();
     GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, 0.1));
@@ -470,7 +451,7 @@
       return;
     }
 
-    instance.model.deleteInstance(instance);
+    instance.model.destroy();
     delete decorationInstanceByCell[key];
     if (lastPlacedDecoration?.instance === instance) {
       lastPlacedDecoration = null;

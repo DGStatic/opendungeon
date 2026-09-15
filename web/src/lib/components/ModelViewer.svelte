@@ -1,14 +1,13 @@
 <script lang="ts">
   import Renderer from "$lib/renderer";
-  import DynamicGLTF from "$lib/renderer/gltf/dynamic";
   import { onMount } from "svelte";
   import type { HTMLAttributes } from "svelte/elements";
   import * as GLM from "gl-matrix";
   import { degToRad } from "$lib/point";
-  import type InstanceGLTF from "$lib/renderer/gltf/instance";
   import { OrthographicCamera, type Camera } from "$lib/renderer/camera";
-  import { callAPI } from "$lib/api";
-  import assert from "assert";
+  import { getMediaUrl } from "$lib/api";
+  import type ModelInstance from "$lib/renderer/model/instance";
+  import type DynamicModel from "$lib/renderer/model/dynamic";
 
   type Props = HTMLAttributes<HTMLCanvasElement> & {
     mediaId: string;
@@ -20,7 +19,7 @@
   let camera: Camera;
   let canvas = $state<HTMLCanvasElement>();
   let modelId: number | null = $state(null);
-  let instance: InstanceGLTF | null;
+  let instance: ModelInstance | null;
 
   onMount(async () => {
     renderer = new Renderer(canvas!, {
@@ -30,16 +29,9 @@
     camera = new OrthographicCamera(canvas!.width / canvas!.height);
     camera.rotateX(degToRad(15));
     GLM.mat4.translate(camera.projection, camera.projection, GLM.vec3.fromValues(0, -1, 0));
-
-    const res = await callAPI(fetch, "GET", "/media/" + mediaId + "/content");
-
-    if (!res.ok) {
-      assert(false, "load media failed");
-    }
-
-    const src = await res.data.json();
-    modelId = await renderer.createDynamicGLTFElement(src);
-    const model = renderer.getAndUseElement<DynamicGLTF>(modelId); // TODO: use static gltf
+    const uri = getMediaUrl(mediaId);
+    modelId = await renderer.createDynamicGLBElement(uri);
+    const model = renderer.getAndUseElement<DynamicModel>(modelId); // TODO: use static model
     const inst = model.createInstance();
     const transform = GLM.mat4.create();
     GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(0, 0, 0));
@@ -68,7 +60,7 @@
     if (autoRotate) {
       GLM.mat4.rotateY(instance?.transform, instance?.transform, degToRad(-0.5));
     }
-    const model = renderer.getElement<DynamicGLTF>(modelId!);
+    const model = renderer.getElement<DynamicModel>(modelId!);
     model.setCamera(camera);
     model.draw();
   }

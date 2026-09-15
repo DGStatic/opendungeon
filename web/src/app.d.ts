@@ -11,25 +11,6 @@ declare global {
     // interface PageState {}
     // interface Platform {}
   }
-
-  namespace svelteHTML {
-    interface IntrinsicElements {
-      "model-viewer": HTMLAttributes<HTMLElement> & {
-        src?: string;
-        alt?: string;
-        poster?: string;
-        "camera-controls"?: boolean;
-        "auto-rotate"?: boolean;
-        "auto-rotate-delay"?: string | number;
-        "rotation-per-second"?: string | number;
-        "disable-zoom"?: boolean;
-        "shadow-intensity"?: string | number;
-        "environment-image"?: string;
-        exposure?: string | number;
-        class?: ClassValue;
-      };
-    }
-  }
 }
 
 export {};
