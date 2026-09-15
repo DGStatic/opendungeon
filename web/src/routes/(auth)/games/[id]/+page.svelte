@@ -32,8 +32,8 @@
   import { GameMenuTool } from "$lib/game";
   import GameToolMenu from "$lib/components/GameToolMenu.svelte";
   import Animator from "$lib/renderer/animator";
-  import type InstanceGLTF from "$lib/renderer/gltf/instance";
-  import DynamicGLTF from "$lib/renderer/gltf/dynamic";
+  import type InstanceGLTF from "$lib/renderer/model/instance";
+  import DynamicGLTF from "$lib/renderer/model/dynamic";
 
   let { data }: PageProps = $props();
 
@@ -533,32 +533,19 @@
   }
 
   async function handleLoadCharacter(mediaId: string, x: number, y: number) {
-    loading = true;
-    try {
-      const res = await callAPI(fetch, "GET", "/media/" + mediaId + "/content");
-
-      if (!res.ok) {
-        assert(false, "load media failed");
-        return;
-      }
-
-      const src = await res.data.json();
-      const modelId = await renderer.createDynamicGLTFElement(src); // TODO: use static gltf
-      const model = renderer.getElement<DynamicGLTF>(modelId);
-      const instance = model.createInstance();
-      const transform = GLM.mat4.create();
-      GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, 0));
-      instance.transform = transform;
-      instance.updateTransforms();
-      instance.computeSkinningMatrix();
-      characters.push({
-        modelId,
-        instance,
-      });
-      console.log("done loading character model");
-    } finally {
-      loading = false;
-    }
+    const uri = getMediaUrl(mediaId);
+    const modelId = await renderer.createDynamicGLBElement(uri);
+    const model = renderer.getElement<DynamicGLTF>(modelId);
+    const instance = model.createInstance();
+    const transform = GLM.mat4.create();
+    GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, 0));
+    instance.transform = transform;
+    instance.updateTransforms();
+    instance.computeSkinningMatrix();
+    characters.push({
+      modelId,
+      instance,
+    });
   }
 
   function handleSendLoadCharacter(mediaId: string) {
@@ -571,9 +558,9 @@
       x: 0,
       y: 0,
     };
-    console.log("sending character");
     pendingMessages.push(loadCharacterMessage);
     socket.send(JSON.stringify(loadCharacterMessage));
+
     handleLoadCharacter(mediaId, 0, 0);
   }
 

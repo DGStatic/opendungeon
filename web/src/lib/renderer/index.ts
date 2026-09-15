@@ -1,10 +1,12 @@
 import { Cartesian } from "$lib/point";
 import type { Camera } from "$lib/renderer/camera";
 import { type RenderElement } from "$lib/renderer/element";
-import DynamicGLTF from "$lib/renderer/gltf/dynamic";
-import type { GLTFObject } from "./gltf/types";
-import Texture from "./texture";
+import type { GLTFObject } from "$lib/renderer/model/types";
+import Texture from "$lib/renderer/texture";
 import * as GLM from "gl-matrix";
+import { loadGLTF } from "$lib/renderer/model/gltf";
+import { loadGLB } from "./model/glb";
+import assert from "$lib/assert";
 
 type RenderElementId = number;
 
@@ -60,6 +62,7 @@ export default class Renderer {
       this.backgroundColor = options.backgroundColor;
     }
 
+    this.gl.enable(this.gl.CULL_FACE);
     this.gl.enable(this.gl.BLEND);
     this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
 
@@ -82,7 +85,18 @@ export default class Renderer {
   }
 
   async createDynamicGLTFElement(source: GLTFObject): Promise<number> {
-    const element = await DynamicGLTF.fromSource(this.gl, source);
+    const element = await loadGLTF(this.gl, source);
+    return this.loadElement(element);
+  }
+
+  async createDynamicGLBElement(uri: string): Promise<number> {
+    const response = await fetch(uri, {
+      credentials: import.meta.env.DEV ? "include" : "same-origin",
+    });
+    assert(response.ok, "failed to get glb");
+
+    const blob = await response.blob();
+    const element = await loadGLB(this.gl, blob);
     return this.loadElement(element);
   }
 
