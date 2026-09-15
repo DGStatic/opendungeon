@@ -1,7 +1,4 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
-
-import type { ClassValue } from "svelte/elements";
-
 // for information about these interfaces
 declare global {
   namespace App {
