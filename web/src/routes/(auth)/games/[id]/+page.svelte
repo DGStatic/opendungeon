@@ -221,7 +221,7 @@
               const modelId = await renderer.createDynamicGLBElement(uri);
               decorationModelLookup[decoration] = modelId;
               const model = renderer.getAndUseElement<DynamicModel>(modelId);
-              for (const decoration of levelData?.objects.decorations) {
+              for (const decoration of levelData.objects.decorations) {
                 const instance = model.createInstance();
                 const transform = GLM.mat4.create();
                 GLM.mat4.translate(
