@@ -53,7 +53,6 @@
   let rectId: number;
   const decorationModelLookup: Record<string, number> = {};
   const decorationInstanceByCell: Record<number, ModelInstance> = {};
-  let lastPlacedDecoration: { cell: Cartesian; instance: ModelInstance } | null = null;
 
   onMount(() => {
     controller = new Controller(canvas!);
@@ -70,6 +69,9 @@
           textures: [],
           decorations: [],
           grid: Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_HEIGHT).fill(null)),
+          objects: {
+            decorations: [],
+          },
         };
 
     rectId = renderer.createElement(Rectangle);
@@ -99,20 +101,15 @@
           decorationModelLookup[decoration] = modelId;
         }),
       ).then(() => {
-        for (let row = 0; row < levelData.grid.length; row++) {
-          for (let col = 0; col < levelData.grid[row].length; col++) {
-            const cell = levelData.grid[row][col];
-            if (!cell || cell.decoration.index < 0) {
-              continue;
-            }
-
-            createDecorationInstance(
-              levelData.decorations[cell.decoration.index],
-              col,
-              row,
-              cell.decoration.rotation,
-            );
-          }
+        for (const decoration of levelData.objects.decorations) {
+          createDecorationInstance(
+            levelData.decorations[decoration.index],
+            decoration.x,
+            decoration.y,
+            decoration.z,
+            decoration.rotation,
+            decoration.scale,
+          );
         }
         loading = false;
       }),
@@ -279,46 +276,20 @@
         );
         assert(decorationIndex !== -1, "Failed to insert and find decoration");
 
-        const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
-        if (
-          coord.x < 0 ||
-          coord.x >= GRID_WIDTH ||
-          coord.y < 0 ||
-          coord.y >= GRID_HEIGHT ||
-          levelData.grid[coord.y][coord.x]?.decoration?.index === decorationIndex
-        ) {
+        const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+        if (coord.x < 0 || coord.x >= GRID_WIDTH || coord.y < 0 || coord.y >= GRID_HEIGHT) {
           return;
         }
 
-        const cell = levelData.grid[coord.y][coord.x];
-        levelData.grid[coord.y][coord.x] = {
-          decoration: {
-            index: decorationIndex,
-            rotation: 0,
-          },
-          texture: cell ? cell.texture : -1,
-        };
-
-        lastPlacedDecoration = {
-          cell: coord,
-          instance: createDecorationInstance(selectedDecoration, coord.x, coord.y, 0),
-        };
-      } else if (event.button === MouseButton.Right) {
-        if (lastPlacedDecoration) {
-          // TODO: Save transformation data with decorations
-          GLM.mat4.rotateY(
-            lastPlacedDecoration.instance.transform,
-            lastPlacedDecoration.instance.transform,
-            degToRad(45),
-          );
-          const cell = levelData.grid[lastPlacedDecoration.cell.y][lastPlacedDecoration.cell.x];
-          assert(!!cell, "last placed decoration's cell doesn't exist.");
-          cell!.decoration.rotation += 45;
-          levelData.grid[lastPlacedDecoration.cell.y][lastPlacedDecoration.cell.x] = {
-            decoration: cell!.decoration,
-            texture: cell!.texture,
-          };
-        }
+        createDecorationInstance(selectedDecoration, coord.x, coord.y, 0.1, 0, 1); // TODO: handle different z positions
+        levelData.objects.decorations.push({
+          index: decorationIndex,
+          x: coord.x,
+          y: coord.y,
+          z: 0.1,
+          rotation: 0,
+          scale: 1,
+        });
       }
     } else {
       input = { type: "dragging", button: event.button };
@@ -348,13 +319,8 @@
                 (texture) => texture === selectedTexture,
               );
               assert(textureIndex !== -1, "Failed to insert and find texture");
-              const cell = levelData.grid[y][x];
               levelData.grid[y][x] = {
                 texture: textureIndex,
-                decoration: {
-                  index: cell ? cell.decoration.index : -1,
-                  rotation: cell ? cell.decoration.rotation : 0,
-                },
               };
             }
           }
@@ -365,7 +331,6 @@
               if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
                 continue;
               }
-              deleteDecorationInstance(x, y);
               levelData.grid[y][x] = null;
             }
           }
@@ -429,33 +394,22 @@
     key: string,
     x: number,
     y: number,
+    z: number,
     rotation: number,
+    scale: number,
   ): ModelInstance {
     const model = renderer.getElement<DynamicModel>(decorationModelLookup[key]);
     const instance = model.createInstance();
     const transform = GLM.mat4.create();
-    GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, 0.1));
+    GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, z));
     GLM.mat4.rotateX(transform, transform, degToRad(90));
     GLM.mat4.rotateY(transform, transform, degToRad(rotation));
+    GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(scale, scale, scale));
     instance.transform = transform;
     instance.updateTransforms();
     instance.computeSkinningMatrix();
     decorationInstanceByCell[getCellKey(x, y)] = instance;
     return instance;
-  }
-
-  function deleteDecorationInstance(x: number, y: number) {
-    const key = getCellKey(x, y);
-    const instance = decorationInstanceByCell[key];
-    if (!instance) {
-      return;
-    }
-
-    instance.model.destroy();
-    delete decorationInstanceByCell[key];
-    if (lastPlacedDecoration?.instance === instance) {
-      lastPlacedDecoration = null;
-    }
   }
 
   async function handleSaveLevel(event: SubmitEvent) {

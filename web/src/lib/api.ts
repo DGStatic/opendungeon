@@ -58,11 +58,17 @@ export type APILevelData = {
   decorations: string[];
   grid: ({
     texture: number; // -1 indicates empty
-    decoration: {
-      index: number;
-      rotation: number; // degrees on Y axis
-    };
   } | null)[][];
+  objects: {
+    decorations: {
+      index: number; // cannot be -1
+      x: number;
+      y: number;
+      z: number; // defaults to 0.1 for now
+      rotation: number; // degrees on the y axis, can add the others later
+      scale: number; // multiplier for all axes
+    }[];
+  };
 };
 
 export type APILevel = APILevelMetaData & {

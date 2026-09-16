@@ -214,31 +214,31 @@
 
           Promise.all(
             levelData.decorations.map(async (decoration) => {
+              if (!levelData?.objects.decorations) {
+                return;
+              }
               const uri = getMediaUrl(decorationMediaLookup[decoration]);
               const modelId = await renderer.createDynamicGLBElement(uri);
               decorationModelLookup[decoration] = modelId;
               const model = renderer.getAndUseElement<DynamicModel>(modelId);
-              for (let row = 0; row < levelData!.grid.length; row++) {
-                for (let col = 0; col < levelData!.grid[row].length; col++) {
-                  const cell = levelData!.grid[row][col];
-                  if (!cell || cell.decoration.index < 0) {
-                    continue;
-                  }
-
-                  const decorationIndex = levelData?.decorations.findIndex((d) => d === decoration);
-                  if (levelData?.grid[row][col]?.decoration.index !== decorationIndex) {
-                    continue;
-                  }
-
-                  const instance = model.createInstance();
-                  const transform = GLM.mat4.create();
-                  GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(col, row, 0));
-                  GLM.mat4.rotateX(transform, transform, degToRad(90));
-                  GLM.mat4.rotateY(transform, transform, degToRad(cell.decoration.rotation));
-                  instance.transform = transform;
-                  instance.updateTransforms();
-                  instance.computeSkinningMatrix();
-                }
+              for (const decoration of levelData?.objects.decorations) {
+                const instance = model.createInstance();
+                const transform = GLM.mat4.create();
+                GLM.mat4.translate(
+                  transform,
+                  transform,
+                  GLM.vec3.fromValues(decoration.x, decoration.y, decoration.z),
+                );
+                GLM.mat4.rotateX(transform, transform, degToRad(90));
+                GLM.mat4.rotateY(transform, transform, degToRad(decoration.rotation));
+                GLM.mat4.scale(
+                  transform,
+                  transform,
+                  GLM.vec3.fromValues(decoration.scale, decoration.scale, decoration.scale),
+                );
+                instance.transform = transform;
+                instance.updateTransforms();
+                instance.computeSkinningMatrix();
               }
             }),
           ).then(() => (loading = false));
