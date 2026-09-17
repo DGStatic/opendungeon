@@ -48,7 +48,9 @@
   let camera: Camera;
   let levelData: APILevelData;
   let frameHandle = -1;
-  let input: { type: "none" } | { type: "dragging" | "down"; button: number } = { type: "none" };
+  let input: { type: "none" } | { type: "dragging" | "down"; button: number } = {
+    type: "none",
+  };
   let dragStartCoord: Cartesian | null = null;
   let dragCurrentCoord: Cartesian | null = null;
   let rectId: number;
@@ -110,7 +112,6 @@
         }),
       ).then(() => {
         for (const decoration of levelData.objects.decorations) {
-          console.log(decoration.id);
           createDecorationInstance(
             decoration.id,
             levelData.decorations[decoration.index],
@@ -376,28 +377,27 @@
                 decoration.y >= minY &&
                 decoration.y <= maxY,
             );
-            if (decorationsToSelect.length === 0) {
-              return;
+            if (decorationsToSelect.length > 0) {
+              const decorationsByX = decorationsToSelect.toSorted((a, b) => a.x - b.x);
+              const decorationsByY = decorationsToSelect.toSorted((a, b) => a.y - b.y);
+              minX = decorationsByX[0].x;
+              maxX = decorationsByX.at(-1)!.x;
+              minY = decorationsByY[0].y;
+              maxY = decorationsByY.at(-1)!.y;
+              selectedArea = {
+                center: new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
+                width:
+                  decorationsToSelect.length === 1
+                    ? Math.max(1, 2 * decorationsToSelect[0].scale)
+                    : Math.max(maxX - minX + 2, 2),
+                height:
+                  decorationsToSelect.length === 1
+                    ? Math.max(1, 2 * decorationsToSelect[0].scale)
+                    : Math.max(maxY - minY + 2, 2),
+                rotation: 0,
+              };
+              selectedDecorations = decorationsToSelect;
             }
-            const decorationsByX = decorationsToSelect.toSorted((a, b) => a.x - b.x);
-            const decorationsByY = decorationsToSelect.toSorted((a, b) => a.y - b.y);
-            minX = decorationsByX[0].x;
-            maxX = decorationsByX.at(-1)!.x;
-            minY = decorationsByY[0].y;
-            maxY = decorationsByY.at(-1)!.y;
-            selectedArea = {
-              center: new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
-              width:
-                decorationsToSelect.length === 1
-                  ? Math.max(1, 2 * decorationsToSelect[0].scale)
-                  : Math.max(maxX - minX + 2, 2),
-              height:
-                decorationsToSelect.length === 1
-                  ? Math.max(1, 2 * decorationsToSelect[0].scale)
-                  : Math.max(maxY - minY + 2, 2),
-              rotation: 0,
-            };
-            selectedDecorations = decorationsToSelect;
           }
         } else if (event.button === MouseButton.Right) {
           // erase
@@ -415,6 +415,8 @@
       dragCurrentCoord = null;
     } else if (input.type === "down") {
       input = { type: "none" };
+      dragStartCoord = null;
+      dragCurrentCoord = null;
       if (event.button === MouseButton.Left) {
         // select the closest decoration within an area
         selectedArea = null;
@@ -456,7 +458,7 @@
 
         camera?.translate(GLM.vec3.fromValues(-delta.x, delta.y, 0));
       } else if (input.button === MouseButton.Left || input.button === MouseButton.Right) {
-        dragCurrentCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
+        dragCurrentCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
         if (input.button === MouseButton.Left && selectedArea) {
           // move selected area and the objects within if the mouse is in the selected area
           if (dragCurrentCoord.x + selectedArea.width / 2 > GRID_WIDTH) {
@@ -495,6 +497,8 @@
               decoration.scale,
             );
           }
+        } else {
+          dragCurrentCoord = dragCurrentCoord.round();
         }
       }
     } else if (input.type === "down") {
@@ -514,7 +518,9 @@
             return;
           }
         }
-
+        selectedArea = null;
+        selectedDecorations = [];
+      } else if (input.button === MouseButton.Right) {
         selectedArea = null;
         selectedDecorations = [];
       }
