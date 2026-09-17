@@ -47,10 +47,16 @@
   let camera: Camera;
   let levelData: APILevelData;
   let frameHandle = -1;
-  let input: { type: "none" } | { type: "dragging"; button: number } = { type: "none" };
+  let input: { type: "none" } | { type: "dragging" | "down"; button: number } = { type: "none" };
   let dragStartCoord: Cartesian | null = null;
   let dragCurrentCoord: Cartesian | null = null;
   let rectId: number;
+  let selectedArea: {
+    center: Cartesian;
+    width: number;
+    height: number;
+    rotation: number;
+  } | null = null;
   const decorationModelLookup: Record<string, number> = {};
   const decorationInstanceByCell: Record<number, ModelInstance> = {};
 
@@ -227,29 +233,52 @@
       const minX = Math.min(dragStartCoord.x, dragCurrentCoord.x);
       const maxX = Math.max(dragStartCoord.x, dragCurrentCoord.x);
 
-      const cells = [];
-      for (let y = minY; y <= maxY; y++) {
-        for (let x = minX; x <= maxX; x++) {
-          cells.push(new Cartesian(x, y));
+      if (!selectedTexture && input.button === MouseButton.Left) {
+        const width = maxX - minX;
+        const height = maxY - minY;
+        drawRectangle(
+          rect,
+          new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
+          width,
+          height,
+          new Float32Array([1, 1, 1, 1]),
+        );
+      } else {
+        const cells = [];
+        for (let y = minY; y <= maxY; y++) {
+          for (let x = minX; x <= maxX; x++) {
+            cells.push(new Cartesian(x, y));
+          }
         }
-      }
 
-      if (cells.length >= 1) {
-        const buffer = rect.allocate(cells.length);
-        for (let i = 0; i < cells.length; i++) {
-          const model = GLM.mat4.create();
-          GLM.mat4.translate(model, model, GLM.vec3.fromValues(cells[i].x, cells[i].y, 2));
-          const offset = i * rect.instanceSize;
-          buffer.set(model, offset);
-          buffer.set(
-            input.button === MouseButton.Left
-              ? new Float32Array([0, 1, 1, 0.4])
-              : new Float32Array([1, 0, 0, 0.4]),
-            offset + model.length,
-          );
+        if (cells.length >= 1) {
+          const buffer = rect.allocate(cells.length);
+          for (let i = 0; i < cells.length; i++) {
+            const model = GLM.mat4.create();
+            GLM.mat4.translate(model, model, GLM.vec3.fromValues(cells[i].x, cells[i].y, 2));
+            const offset = i * rect.instanceSize;
+            buffer.set(model, offset);
+            buffer.set(
+              input.button === MouseButton.Left
+                ? new Float32Array([0, 1, 1, 0.4])
+                : new Float32Array([1, 0, 0, 0.4]),
+              offset + model.length,
+            );
+          }
+          rect.draw();
         }
-        rect.draw();
       }
+    }
+
+    // draw selected area
+    if (selectedArea) {
+      drawRectangle(
+        rect,
+        selectedArea.center,
+        selectedArea.width,
+        selectedArea.height,
+        new Float32Array([1, 1, 1, 1]),
+      );
     }
 
     // draw the decorations
@@ -292,8 +321,9 @@
         });
       }
     } else {
-      input = { type: "dragging", button: event.button };
-      dragStartCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
+      input = { type: "down", button: event.button };
+      const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+      dragStartCoord = coord.round();
     }
   }
 
@@ -305,24 +335,60 @@
         const maxY = Math.max(dragStartCoord.y, dragCurrentCoord.y);
         const minX = Math.min(dragStartCoord.x, dragCurrentCoord.x);
         const maxX = Math.max(dragStartCoord.x, dragCurrentCoord.x);
-        if (event.button === MouseButton.Left && selectedTexture) {
-          // paint
-          for (let y = minY; y <= maxY; y++) {
-            for (let x = minX; x <= maxX; x++) {
-              if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
-                continue;
+        if (event.button === MouseButton.Left) {
+          if (selectedTexture) {
+            // paint
+            for (let y = minY; y <= maxY; y++) {
+              for (let x = minX; x <= maxX; x++) {
+                if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
+                  continue;
+                }
+                if (!levelData.textures.includes(selectedTexture)) {
+                  levelData.textures.push(selectedTexture);
+                }
+                const textureIndex = levelData.textures.findIndex(
+                  (texture) => texture === selectedTexture,
+                );
+                assert(textureIndex !== -1, "Failed to insert and find texture");
+                levelData.grid[y][x] = {
+                  texture: textureIndex,
+                };
               }
-              if (!levelData.textures.includes(selectedTexture)) {
-                levelData.textures.push(selectedTexture);
-              }
-              const textureIndex = levelData.textures.findIndex(
-                (texture) => texture === selectedTexture,
-              );
-              assert(textureIndex !== -1, "Failed to insert and find texture");
-              levelData.grid[y][x] = {
-                texture: textureIndex,
-              };
             }
+          } else {
+            // select all decorations in the area
+            let minY = Math.min(dragStartCoord!.y, dragCurrentCoord.y);
+            let maxY = Math.max(dragStartCoord!.y, dragCurrentCoord.y);
+            let minX = Math.min(dragStartCoord!.x, dragCurrentCoord.x);
+            let maxX = Math.max(dragStartCoord!.x, dragCurrentCoord.x);
+            const decorationsToSelect = levelData.objects.decorations.filter(
+              (decoration) =>
+                decoration.x >= minX &&
+                decoration.x <= maxX &&
+                decoration.y >= minY &&
+                decoration.y <= maxY,
+            );
+            if (decorationsToSelect.length === 0) {
+              return;
+            }
+            const decorationsByX = decorationsToSelect.toSorted((a, b) => a.x - b.x);
+            const decorationsByY = decorationsToSelect.toSorted((a, b) => a.y - b.y);
+            minX = decorationsByX[0].x;
+            maxX = decorationsByX.at(-1)!.x;
+            minY = decorationsByY[0].y;
+            maxY = decorationsByY.at(-1)!.y;
+            selectedArea = {
+              center: new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
+              width:
+                decorationsToSelect.length === 1
+                  ? Math.max(1, 2 * decorationsToSelect[0].scale)
+                  : Math.max(maxX - minX + 2, 2),
+              height:
+                decorationsToSelect.length === 1
+                  ? Math.max(1, 2 * decorationsToSelect[0].scale)
+                  : Math.max(maxY - minY + 2, 2),
+              rotation: 0,
+            };
           }
         } else if (event.button === MouseButton.Right) {
           // erase
@@ -338,6 +404,32 @@
       }
       dragStartCoord = null;
       dragCurrentCoord = null;
+    } else if (input.type === "down") {
+      input = { type: "none" };
+      if (event.button === MouseButton.Left) {
+        // select the closest decoration within an area
+        selectedArea = null;
+        const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+        const nearestDecoration = levelData.objects.decorations
+          .sort(
+            (a, b) =>
+              new Cartesian(a.x, a.y).distance(coord) - new Cartesian(b.x, b.y).distance(coord),
+          )
+          .at(0);
+        if (!nearestDecoration) {
+          return;
+        }
+        const center = new Cartesian(nearestDecoration?.x, nearestDecoration.y);
+        if (center.distance(coord) > Math.max(1, 1 * nearestDecoration.scale)) {
+          return;
+        }
+        selectedArea = {
+          center,
+          width: Math.max(1, 2 * nearestDecoration.scale),
+          height: Math.max(1, 2 * nearestDecoration.scale),
+          rotation: 0,
+        };
+      }
     }
   }
 
@@ -355,6 +447,11 @@
         camera?.translate(GLM.vec3.fromValues(-delta.x, delta.y, 0));
       } else if (input.button === MouseButton.Left || input.button === MouseButton.Right) {
         dragCurrentCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
+      }
+    } else if (input.type === "down") {
+      input = { type: "dragging", button: input.button };
+      if (input.button === MouseButton.Left) {
+        selectedArea = null;
       }
     }
   }
@@ -412,6 +509,61 @@
     return instance;
   }
 
+  function drawRectangle(
+    rect: Rectangle,
+    center: Cartesian,
+    width: number,
+    height: number,
+    color: Float32Array,
+  ) {
+    const buffer = rect.allocate(4);
+    let offset = 0;
+    const leftModel = GLM.mat4.create();
+    GLM.mat4.translate(
+      leftModel,
+      leftModel,
+      GLM.vec3.fromValues(center.x - width / 2, center.y, 10),
+    );
+    GLM.mat4.scale(leftModel, leftModel, GLM.vec3.fromValues(0.1, height, 1));
+    buffer.set(leftModel, offset);
+    buffer.set(color, offset + leftModel.length);
+    offset += rect.instanceSize;
+
+    const topModel = GLM.mat4.create();
+    GLM.mat4.translate(
+      topModel,
+      topModel,
+      GLM.vec3.fromValues(center.x, center.y + height / 2, 10),
+    );
+    GLM.mat4.scale(topModel, topModel, GLM.vec3.fromValues(width, 0.1, 1));
+    buffer.set(topModel, offset);
+    buffer.set(color, offset + topModel.length);
+    offset += rect.instanceSize;
+
+    const rightModel = GLM.mat4.create();
+    GLM.mat4.translate(
+      rightModel,
+      rightModel,
+      GLM.vec3.fromValues(center.x + width / 2, center.y, 10),
+    );
+    GLM.mat4.scale(rightModel, rightModel, GLM.vec3.fromValues(0.1, height, 1));
+    buffer.set(rightModel, offset);
+    buffer.set(color, offset + rightModel.length);
+    offset += rect.instanceSize;
+
+    const bottomModel = GLM.mat4.create();
+    GLM.mat4.translate(
+      bottomModel,
+      bottomModel,
+      GLM.vec3.fromValues(center.x, center.y - height / 2, 10),
+    );
+    GLM.mat4.scale(bottomModel, bottomModel, GLM.vec3.fromValues(width, 0.1, 1));
+    buffer.set(bottomModel, offset);
+    buffer.set(color, offset + bottomModel.length);
+    offset += rect.instanceSize;
+    rect.draw();
+  }
+
   async function handleSaveLevel(event: SubmitEvent) {
     event.preventDefault();
 
@@ -460,10 +612,15 @@
               data-selected={cellTexture.key === selectedTexture}
               class="data-[selected=true]:text-blue-500 group"
               onclick={() => {
-                selectedDecoration = null;
-                handleLoadTexture(cellTexture).then(() => {
-                  selectedTexture = cellTexture.key;
-                });
+                if (selectedTexture === cellTexture.key) {
+                  selectedTexture = null;
+                } else {
+                  selectedDecoration = null;
+                  selectedArea = null;
+                  handleLoadTexture(cellTexture).then(() => {
+                    selectedTexture = cellTexture.key;
+                  });
+                }
               }}
             >
               <img
@@ -471,7 +628,7 @@
                 src={getMediaUrl(cellTexture.mediaId)}
                 width={64}
                 height={64}
-                class="texture border-2 border-gray-800 group-data-[selected=true]:border-gray-200 hover:border-aurora-gray-200 rounded"
+                class="texture border-2 border-gray-800 group-data-[selected=true]:border-gray-200 rounded"
               />
             </button>
           </li>
@@ -493,7 +650,7 @@
                 } else {
                   loading = true;
                   selectedTexture = null;
-
+                  selectedArea = null;
                   handleLoadDecoration(decoration).then(() => {
                     loading = false;
                     selectedDecoration = decoration.key;
@@ -505,7 +662,7 @@
               <ModelViewer
                 autoRotate={true}
                 mediaId={decoration.mediaId}
-                class="size-16 border-2 border-gray-800 group-data-[selected=true]:border-gray-200 hover:border-aurora-gray-200 rounded"
+                class="size-16 border-2 border-gray-800 group-data-[selected=true]:border-gray-200 rounded"
               />
             </button>
           </li>
