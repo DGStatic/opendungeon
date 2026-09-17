@@ -5,6 +5,7 @@
     type APICellTexture,
     type APIDecoration,
     type APILevelData,
+    type APILevelDecorationData,
   } from "$lib/api";
   import Controller, {
     type GameMouseMoveEvent,
@@ -57,8 +58,9 @@
     height: number;
     rotation: number;
   } | null = null;
+  let selectedDecorations: APILevelDecorationData[] = [];
+  let decorationInstanceById: Record<string, ModelInstance> = {};
   const decorationModelLookup: Record<string, number> = {};
-  const decorationInstanceByCell: Record<number, ModelInstance> = {};
 
   onMount(() => {
     controller = new Controller(canvas!);
@@ -108,7 +110,9 @@
         }),
       ).then(() => {
         for (const decoration of levelData.objects.decorations) {
+          console.log(decoration.id);
           createDecorationInstance(
+            decoration.id,
             levelData.decorations[decoration.index],
             decoration.x,
             decoration.y,
@@ -233,39 +237,41 @@
       const minX = Math.min(dragStartCoord.x, dragCurrentCoord.x);
       const maxX = Math.max(dragStartCoord.x, dragCurrentCoord.x);
 
-      if (!selectedTexture && input.button === MouseButton.Left) {
-        const width = maxX - minX;
-        const height = maxY - minY;
-        drawRectangle(
-          rect,
-          new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
-          width,
-          height,
-          new Float32Array([1, 1, 1, 1]),
-        );
-      } else {
-        const cells = [];
-        for (let y = minY; y <= maxY; y++) {
-          for (let x = minX; x <= maxX; x++) {
-            cells.push(new Cartesian(x, y));
+      if (!selectedArea) {
+        if (!selectedTexture && input.button === MouseButton.Left) {
+          const width = maxX - minX;
+          const height = maxY - minY;
+          drawRectangle(
+            rect,
+            new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
+            width,
+            height,
+            new Float32Array([1, 1, 1, 1]),
+          );
+        } else {
+          const cells = [];
+          for (let y = minY; y <= maxY; y++) {
+            for (let x = minX; x <= maxX; x++) {
+              cells.push(new Cartesian(x, y));
+            }
           }
-        }
 
-        if (cells.length >= 1) {
-          const buffer = rect.allocate(cells.length);
-          for (let i = 0; i < cells.length; i++) {
-            const model = GLM.mat4.create();
-            GLM.mat4.translate(model, model, GLM.vec3.fromValues(cells[i].x, cells[i].y, 2));
-            const offset = i * rect.instanceSize;
-            buffer.set(model, offset);
-            buffer.set(
-              input.button === MouseButton.Left
-                ? new Float32Array([0, 1, 1, 0.4])
-                : new Float32Array([1, 0, 0, 0.4]),
-              offset + model.length,
-            );
+          if (cells.length >= 1) {
+            const buffer = rect.allocate(cells.length);
+            for (let i = 0; i < cells.length; i++) {
+              const model = GLM.mat4.create();
+              GLM.mat4.translate(model, model, GLM.vec3.fromValues(cells[i].x, cells[i].y, 2));
+              const offset = i * rect.instanceSize;
+              buffer.set(model, offset);
+              buffer.set(
+                input.button === MouseButton.Left
+                  ? new Float32Array([0, 1, 1, 0.4])
+                  : new Float32Array([1, 0, 0, 0.4]),
+                offset + model.length,
+              );
+            }
+            rect.draw();
           }
-          rect.draw();
         }
       }
     }
@@ -310,8 +316,10 @@
           return;
         }
 
-        createDecorationInstance(selectedDecoration, coord.x, coord.y, 0.1, 0, 1); // TODO: handle different z positions
+        const id = crypto.randomUUID();
+        createDecorationInstance(id, selectedDecoration, coord.x, coord.y, 0.1, 0, 1); // TODO: handle different z positions
         levelData.objects.decorations.push({
+          id,
           index: decorationIndex,
           x: coord.x,
           y: coord.y,
@@ -355,7 +363,7 @@
                 };
               }
             }
-          } else {
+          } else if (!selectedArea) {
             // select all decorations in the area
             let minY = Math.min(dragStartCoord!.y, dragCurrentCoord.y);
             let maxY = Math.max(dragStartCoord!.y, dragCurrentCoord.y);
@@ -389,6 +397,7 @@
                   : Math.max(maxY - minY + 2, 2),
               rotation: 0,
             };
+            selectedDecorations = decorationsToSelect;
           }
         } else if (event.button === MouseButton.Right) {
           // erase
@@ -419,7 +428,7 @@
         if (!nearestDecoration) {
           return;
         }
-        const center = new Cartesian(nearestDecoration?.x, nearestDecoration.y);
+        const center = new Cartesian(nearestDecoration.x, nearestDecoration.y);
         if (center.distance(coord) > Math.max(1, 1 * nearestDecoration.scale)) {
           return;
         }
@@ -429,6 +438,7 @@
           height: Math.max(1, 2 * nearestDecoration.scale),
           rotation: 0,
         };
+        selectedDecorations = [nearestDecoration];
       }
     }
   }
@@ -447,11 +457,66 @@
         camera?.translate(GLM.vec3.fromValues(-delta.x, delta.y, 0));
       } else if (input.button === MouseButton.Left || input.button === MouseButton.Right) {
         dragCurrentCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
+        if (input.button === MouseButton.Left && selectedArea) {
+          // move selected area and the objects within if the mouse is in the selected area
+          if (dragCurrentCoord.x + selectedArea.width / 2 > GRID_WIDTH) {
+            dragCurrentCoord.x = GRID_WIDTH - selectedArea.width / 2;
+          }
+          if (dragCurrentCoord.x - selectedArea.width / 2 < 0) {
+            dragCurrentCoord.x = 0 + selectedArea.width / 2;
+          }
+          if (dragCurrentCoord.y + selectedArea.height / 2 > GRID_HEIGHT) {
+            dragCurrentCoord.y = GRID_HEIGHT - selectedArea.height / 2;
+          }
+          if (dragCurrentCoord.y - selectedArea.height / 2 < 0) {
+            dragCurrentCoord.y = 0 + selectedArea.height / 2;
+          }
+          const deltaX = dragCurrentCoord.x - selectedArea.center.x;
+          const deltaY = dragCurrentCoord.y - selectedArea.center.y;
+          selectedArea = {
+            center: new Cartesian(dragCurrentCoord.x, dragCurrentCoord.y),
+            width: selectedArea.width,
+            height: selectedArea.height,
+            rotation: selectedArea.rotation,
+          };
+          for (const selected of selectedDecorations) {
+            const index = levelData.objects.decorations.findIndex(
+              (decoration) => decoration.id === selected.id,
+            )!;
+            const decoration = levelData.objects.decorations[index];
+            decoration.x += deltaX;
+            decoration.y += deltaY;
+            levelData.objects.decorations[index] = decoration;
+            decorationInstanceById[decoration.id].transform = buildDecorationTransform(
+              decoration.x,
+              decoration.y,
+              decoration.z,
+              decoration.rotation,
+              decoration.scale,
+            );
+          }
+        }
       }
     } else if (input.type === "down") {
       input = { type: "dragging", button: input.button };
       if (input.button === MouseButton.Left) {
+        if (selectedArea && dragStartCoord) {
+          const minX = selectedArea.center.x - selectedArea.width / 2;
+          const maxX = selectedArea.center.x + selectedArea.width / 2;
+          const minY = selectedArea.center.y - selectedArea.height / 2;
+          const maxY = selectedArea.center.y + selectedArea.height / 2;
+          if (
+            dragStartCoord.x >= minX &&
+            dragStartCoord.x <= maxX &&
+            dragStartCoord.y >= minY &&
+            dragStartCoord.y <= maxY
+          ) {
+            return;
+          }
+        }
+
         selectedArea = null;
+        selectedDecorations = [];
       }
     }
   }
@@ -483,11 +548,23 @@
     levelData.decorations.push(decoration.key);
   }
 
-  function getCellKey(x: number, y: number): number {
-    return y * GRID_WIDTH + x;
+  function buildDecorationTransform(
+    x: number,
+    y: number,
+    z: number,
+    rotation: number,
+    scale: number,
+  ): GLM.mat4 {
+    const transform = GLM.mat4.create();
+    GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, z));
+    GLM.mat4.rotateX(transform, transform, degToRad(90));
+    GLM.mat4.rotateY(transform, transform, degToRad(rotation));
+    GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(scale, scale, scale));
+    return transform;
   }
 
   function createDecorationInstance(
+    id: string,
     key: string,
     x: number,
     y: number,
@@ -497,15 +574,10 @@
   ): ModelInstance {
     const model = renderer.getElement<DynamicModel>(decorationModelLookup[key]);
     const instance = model.createInstance();
-    const transform = GLM.mat4.create();
-    GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, z));
-    GLM.mat4.rotateX(transform, transform, degToRad(90));
-    GLM.mat4.rotateY(transform, transform, degToRad(rotation));
-    GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(scale, scale, scale));
-    instance.transform = transform;
+    instance.transform = buildDecorationTransform(x, y, z, rotation, scale);
     instance.updateTransforms();
     instance.computeSkinningMatrix();
-    decorationInstanceByCell[getCellKey(x, y)] = instance;
+    decorationInstanceById[id] = instance;
     return instance;
   }
 
@@ -617,6 +689,7 @@
                 } else {
                   selectedDecoration = null;
                   selectedArea = null;
+                  selectedDecorations = [];
                   handleLoadTexture(cellTexture).then(() => {
                     selectedTexture = cellTexture.key;
                   });

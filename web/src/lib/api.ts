@@ -52,6 +52,16 @@ export type APILevelMetaData = {
   updatedAt: number;
 };
 
+export type APILevelDecorationData = {
+  id: string; // decorations can exist at the same position, so a uuid is required
+  index: number; // cannot be -1
+  x: number;
+  y: number;
+  z: number; // defaults to 0.1 for now
+  rotation: number; // degrees on the y axis, can add the others later
+  scale: number; // multiplier for all axes
+};
+
 export type APILevelData = {
   version: number;
   textures: string[];
@@ -60,14 +70,7 @@ export type APILevelData = {
     texture: number; // -1 indicates empty
   } | null)[][];
   objects: {
-    decorations: {
-      index: number; // cannot be -1
-      x: number;
-      y: number;
-      z: number; // defaults to 0.1 for now
-      rotation: number; // degrees on the y axis, can add the others later
-      scale: number; // multiplier for all axes
-    }[];
+    decorations: APILevelDecorationData[];
   };
 };
 
