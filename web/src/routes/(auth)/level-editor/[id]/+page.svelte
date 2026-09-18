@@ -797,8 +797,15 @@
     </div>
 
     {#if selectedArea}
-      <StyledInput type="number" placeholder="Rotation (degrees)" bind:value={rotation} />
-      <StyledInput type="number" placeholder="Scale" bind:value={scale} step={0.1} />
+      <div class="flex gap-2 items-center ">
+        <h2 class="flex-1">Rotation</h2>
+        <StyledInput class="flex-2" type="number" placeholder="Rotation (degrees)" bind:value={rotation} />
+      </div>
+
+      <div class="flex gap-2 items-center">
+        <h2 class="flex-1">Scale</h2>
+        <StyledInput class="flex-2" type="number" placeholder="Scale" bind:value={scale} step={0.1} />
+      </div>
     {/if}
   </div>
 </main>
