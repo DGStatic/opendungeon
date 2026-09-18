@@ -59,10 +59,70 @@
     width: number;
     height: number;
     rotation: number;
-  } | null = null;
+    scale: number;
+  } | null = $state(null);
+  let rotation: string | number = $state(0);
+  let scale: string | number = $state(1);
   let selectedDecorations: APILevelDecorationData[] = [];
   let decorationInstanceById: Record<string, ModelInstance> = {};
   const decorationModelLookup: Record<string, number> = {};
+
+  $effect(() => {
+    if (!selectedArea) {
+      rotation = 0;
+      scale = 1;
+      return;
+    }
+
+    if (typeof rotation === "string") {
+      rotation = 0;
+    }
+    if (typeof scale === "string") {
+      scale = 1;
+    }
+
+    if (rotation > 360) {
+      rotation = 360;
+    } else if (rotation < -360) {
+      rotation = -360;
+    }
+
+    const rotationDelta = rotation - selectedArea.rotation;
+    const scaleDelta = scale / selectedArea.scale;
+    if (rotationDelta === 0 && scaleDelta === 0) {
+      return;
+    }
+
+    // for each selected decoration, rotate around the center of the selected area
+    const pivot: GLM.vec2 = [selectedArea.center.x, selectedArea.center.y];
+    for (const decoration of selectedDecorations) {
+      const decorationIndex = levelData.objects.decorations.findIndex(
+        (d) => d.id === decoration.id,
+      );
+      const d = levelData.objects.decorations[decorationIndex];
+
+      const position = GLM.vec2.create();
+      GLM.vec2.rotate(position, [d.x, d.y], pivot, degToRad(rotationDelta));
+      GLM.vec2.sub(position, position, pivot);
+      GLM.vec2.scaleAndAdd(position, pivot, position, scaleDelta);
+      d.x = position[0];
+      d.y = position[1];
+      d.rotation += rotationDelta;
+      d.scale *= scaleDelta;
+      levelData.objects.decorations[decorationIndex] = d;
+
+      decorationInstanceById[d.id].transform = buildDecorationTransform(
+        d.x,
+        d.y,
+        d.z,
+        d.rotation,
+        d.scale,
+      );
+    }
+
+    selectedArea.rotation = rotation;
+    selectedArea.scale = scale;
+  });
 
   onMount(() => {
     controller = new Controller(canvas!);
@@ -247,6 +307,7 @@
             new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
             width,
             height,
+            0,
             new Float32Array([1, 1, 1, 1]),
           );
         } else {
@@ -282,8 +343,9 @@
       drawRectangle(
         rect,
         selectedArea.center,
-        selectedArea.width,
-        selectedArea.height,
+        selectedArea.width * selectedArea.scale,
+        selectedArea.height * selectedArea.scale,
+        selectedArea.rotation,
         new Float32Array([1, 1, 1, 1]),
       );
     }
@@ -332,7 +394,11 @@
     } else {
       input = { type: "down", button: event.button };
       const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
-      dragStartCoord = coord.round();
+      if (event.button === MouseButton.Left && !selectedTexture) {
+        dragStartCoord = coord;
+      } else {
+        dragStartCoord = coord.round();
+      }
     }
   }
 
@@ -380,21 +446,22 @@
             if (decorationsToSelect.length > 0) {
               const decorationsByX = decorationsToSelect.toSorted((a, b) => a.x - b.x);
               const decorationsByY = decorationsToSelect.toSorted((a, b) => a.y - b.y);
-              minX = decorationsByX[0].x;
-              maxX = decorationsByX.at(-1)!.x;
-              minY = decorationsByY[0].y;
-              maxY = decorationsByY.at(-1)!.y;
+              minX = decorationsByX[0].x - 1 * decorationsByX[0].scale;
+              maxX = decorationsByX.at(-1)!.x + 1 * decorationsByX.at(-1)!.scale;
+              minY = decorationsByY[0].y - 1 * decorationsByY[0].scale;
+              maxY = decorationsByY.at(-1)!.y + 1 * decorationsByY.at(-1)!.scale;
               selectedArea = {
                 center: new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
                 width:
                   decorationsToSelect.length === 1
                     ? Math.max(1, 2 * decorationsToSelect[0].scale)
-                    : Math.max(maxX - minX + 2, 2),
+                    : Math.max(maxX - minX, 2),
                 height:
                   decorationsToSelect.length === 1
                     ? Math.max(1, 2 * decorationsToSelect[0].scale)
-                    : Math.max(maxY - minY + 2, 2),
+                    : Math.max(maxY - minY, 2),
                 rotation: 0,
+                scale: 1,
               };
               selectedDecorations = decorationsToSelect;
             }
@@ -439,6 +506,7 @@
           width: Math.max(1, 2 * nearestDecoration.scale),
           height: Math.max(1, 2 * nearestDecoration.scale),
           rotation: 0,
+          scale: 1,
         };
         selectedDecorations = [nearestDecoration];
       }
@@ -447,6 +515,7 @@
 
   function handleMove(event: GameMouseMoveEvent) {
     if (input.type === "dragging") {
+      const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
       if (input.button === MouseButton.Middle) {
         const end = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
         const start = renderer.canvasCoordToWorldCoord(
@@ -457,9 +526,13 @@
         const delta = start.subtract(end);
 
         camera?.translate(GLM.vec3.fromValues(-delta.x, delta.y, 0));
-      } else if (input.button === MouseButton.Left || input.button === MouseButton.Right) {
-        dragCurrentCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
-        if (input.button === MouseButton.Left && selectedArea) {
+      } else if (input.button === MouseButton.Left) {
+        if (selectedTexture) {
+          dragCurrentCoord = coord.round();
+        } else {
+          dragCurrentCoord = coord;
+        }
+        if (selectedArea) {
           // move selected area and the objects within if the mouse is in the selected area
           if (dragCurrentCoord.x + selectedArea.width / 2 > GRID_WIDTH) {
             dragCurrentCoord.x = GRID_WIDTH - selectedArea.width / 2;
@@ -475,12 +548,7 @@
           }
           const deltaX = dragCurrentCoord.x - selectedArea.center.x;
           const deltaY = dragCurrentCoord.y - selectedArea.center.y;
-          selectedArea = {
-            center: new Cartesian(dragCurrentCoord.x, dragCurrentCoord.y),
-            width: selectedArea.width,
-            height: selectedArea.height,
-            rotation: selectedArea.rotation,
-          };
+          selectedArea.center = new Cartesian(dragCurrentCoord.x, dragCurrentCoord.y);
           for (const selected of selectedDecorations) {
             const index = levelData.objects.decorations.findIndex(
               (decoration) => decoration.id === selected.id,
@@ -497,9 +565,9 @@
               decoration.scale,
             );
           }
-        } else {
-          dragCurrentCoord = dragCurrentCoord.round();
         }
+      } else if (input.button === MouseButton.Right) {
+        dragCurrentCoord = coord.round();
       }
     } else if (input.type === "down") {
       input = { type: "dragging", button: input.button };
@@ -592,53 +660,32 @@
     center: Cartesian,
     width: number,
     height: number,
+    rotation: number,
     color: Float32Array,
   ) {
     const buffer = rect.allocate(4);
     let offset = 0;
-    const leftModel = GLM.mat4.create();
-    GLM.mat4.translate(
-      leftModel,
-      leftModel,
-      GLM.vec3.fromValues(center.x - width / 2, center.y, 10),
-    );
-    GLM.mat4.scale(leftModel, leftModel, GLM.vec3.fromValues(0.1, height, 1));
-    buffer.set(leftModel, offset);
-    buffer.set(color, offset + leftModel.length);
-    offset += rect.instanceSize;
 
-    const topModel = GLM.mat4.create();
-    GLM.mat4.translate(
-      topModel,
-      topModel,
-      GLM.vec3.fromValues(center.x, center.y + height / 2, 10),
-    );
-    GLM.mat4.scale(topModel, topModel, GLM.vec3.fromValues(width, 0.1, 1));
-    buffer.set(topModel, offset);
-    buffer.set(color, offset + topModel.length);
-    offset += rect.instanceSize;
+    const pivot = GLM.mat4.create();
+    GLM.mat4.translate(pivot, pivot, GLM.vec3.fromValues(center.x, center.y, 10));
+    GLM.mat4.rotateZ(pivot, pivot, degToRad(rotation));
 
-    const rightModel = GLM.mat4.create();
-    GLM.mat4.translate(
-      rightModel,
-      rightModel,
-      GLM.vec3.fromValues(center.x + width / 2, center.y, 10),
-    );
-    GLM.mat4.scale(rightModel, rightModel, GLM.vec3.fromValues(0.1, height, 1));
-    buffer.set(rightModel, offset);
-    buffer.set(color, offset + rightModel.length);
-    offset += rect.instanceSize;
+    const sides: Array<{ offset: GLM.vec3; scale: GLM.vec3 }> = [
+      { offset: [-width / 2, 0, 0], scale: [0.1, height, 1] }, // left
+      { offset: [0, height / 2, 0], scale: [width, 0.1, 1] }, // top
+      { offset: [width / 2, 0, 0], scale: [0.1, height, 1] }, // right
+      { offset: [0, -height / 2, 0], scale: [width, 0.1, 1] }, // bottom
+    ];
 
-    const bottomModel = GLM.mat4.create();
-    GLM.mat4.translate(
-      bottomModel,
-      bottomModel,
-      GLM.vec3.fromValues(center.x, center.y - height / 2, 10),
-    );
-    GLM.mat4.scale(bottomModel, bottomModel, GLM.vec3.fromValues(width, 0.1, 1));
-    buffer.set(bottomModel, offset);
-    buffer.set(color, offset + bottomModel.length);
-    offset += rect.instanceSize;
+    for (const side of sides) {
+      const model = GLM.mat4.clone(pivot);
+      GLM.mat4.translate(model, model, side.offset);
+      GLM.mat4.scale(model, model, side.scale);
+      buffer.set(model, offset);
+      buffer.set(color, offset + model.length);
+      offset += rect.instanceSize;
+    }
+
     rect.draw();
   }
 
@@ -748,6 +795,11 @@
         {/each}
       </ul>
     </div>
+
+    {#if selectedArea}
+      <StyledInput type="number" placeholder="Rotation (degrees)" bind:value={rotation} />
+      <StyledInput type="number" placeholder="Scale" bind:value={scale} step={0.1} />
+    {/if}
   </div>
 </main>
 
