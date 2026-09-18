@@ -95,12 +95,13 @@
       return;
     }
 
-    // for each selected decoration, rotate around the center of the selected area
+    // for each selected decoration, rotate around the center of the selected area and scale and translate relative to the area
     const pivot: GLM.vec2 = [selectedArea.center.x, selectedArea.center.y];
     for (const decoration of selectedDecorations) {
       const decorationIndex = levelData.objects.decorations.findIndex(
         (d) => d.id === decoration.id,
       );
+      assert(decorationIndex !== -1, "selected decoration not found in level data");
       const d = levelData.objects.decorations[decorationIndex];
 
       const position = GLM.vec2.create();
@@ -382,7 +383,7 @@
         const decorationIndex = levelData.decorations.findIndex(
           (decoration) => decoration === selectedDecoration,
         );
-        assert(decorationIndex !== -1, "Failed to insert and find decoration");
+        assert(decorationIndex !== -1, "selected decoration not found in level data");
 
         const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
         if (coord.x < 0 || coord.x >= GRID_WIDTH || coord.y < 0 || coord.y >= GRID_HEIGHT) {
@@ -563,6 +564,7 @@
             const index = levelData.objects.decorations.findIndex(
               (decoration) => decoration.id === selected.id,
             )!;
+            assert(index !== -1, "selected decoration not found in level data");
             const decoration = levelData.objects.decorations[index];
             decoration.x += deltaX;
             decoration.y += deltaY;
