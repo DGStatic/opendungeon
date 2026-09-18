@@ -4,6 +4,13 @@ export enum MouseButton {
   Right,
 }
 
+export enum Key {
+  Backspace = "Backspace",
+  Delete = "Delete",
+  Escape = "Escape",
+  Control = "Control",
+}
+
 export type GameMouseClearEvent = { type: "clear" };
 
 export type GameMousePressEvent = {
@@ -37,8 +44,16 @@ export type GameMouseEvent =
   | GameMouseMoveEvent
   | GameMouseScrollEvent;
 
+export type GameKeyPressEvent = {
+  type: "press";
+  key: string;
+};
+
+export type GameKeyEvent = GameKeyPressEvent;
+
 export default class Controller {
   private mouseEvents: GameMouseEvent[] = [];
+  private keyEvents: GameKeyEvent[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     canvas.addEventListener("pointerout", (event) => {
@@ -51,6 +66,7 @@ export default class Controller {
 
     canvas.addEventListener("pointerdown", (event) => {
       event.preventDefault();
+      canvas.focus();
 
       this.mouseEvents.push({
         type: "press",
@@ -99,11 +115,26 @@ export default class Controller {
         y: event.y,
       });
     });
+
+    canvas.addEventListener("keydown", (event) => {
+      event.preventDefault();
+
+      this.keyEvents.push({
+        type: "press",
+        key: event.key,
+      });
+    });
   }
 
   getMouseEvents(): GameMouseEvent[] {
     const events = structuredClone(this.mouseEvents);
     this.mouseEvents = [];
+    return events;
+  }
+
+  getKeyEvents(): GameKeyEvent[] {
+    const events = structuredClone(this.keyEvents);
+    this.keyEvents = [];
     return events;
   }
 }

@@ -8,10 +8,12 @@
     type APILevelDecorationData,
   } from "$lib/api";
   import Controller, {
+    type GameKeyEvent,
     type GameMouseMoveEvent,
     type GameMousePressEvent,
     type GameMouseReleaseEvent,
     type GameMouseScrollEvent,
+    Key,
     MouseButton,
   } from "$lib/controller";
   import { Cartesian, degToRad } from "$lib/point";
@@ -217,6 +219,14 @@
         }
         case "scroll": {
           handleScroll(event);
+          break;
+        }
+      }
+    }
+    for (const event of controller.getKeyEvents()) {
+      switch (event.type) {
+        case "press": {
+          handleKeyPress(event);
           break;
         }
       }
@@ -599,6 +609,31 @@
     camera!.zoom = Math.max(1, camera!.zoom + event.delta / 25);
   }
 
+  function handleKeyPress(event: GameKeyEvent) {
+    switch (event.key) {
+      case Key.Backspace:
+      case Key.Delete:
+        // delete all selected decorations and clear selected area
+        for (const decoration of selectedDecorations) {
+          decorationInstanceById[decoration.id].model.deleteInstance(decoration.id);
+          const decorationIndex = levelData.objects.decorations.findIndex(
+            (d) => d.id === decoration.id,
+          );
+          assert(decorationIndex !== -1, "selected decoration not found in level data");
+          levelData.objects.decorations.splice(decorationIndex, 1);
+        }
+        selectedArea = null;
+        selectedDecorations = [];
+        break;
+      case Key.Escape:
+        selectedArea = null;
+        selectedDecorations = [];
+        selectedTexture = null;
+        selectedDecoration = null;
+        break;
+    }
+  }
+
   async function handleLoadTexture(texture: APICellTexture) {
     try {
       await renderer.loadTexture(texture.key, getMediaUrl(texture.mediaId), { mode: "nearest" });
@@ -647,7 +682,7 @@
     scale: number,
   ): ModelInstance {
     const model = renderer.getElement<DynamicModel>(decorationModelLookup[key]);
-    const instance = model.createInstance();
+    const instance = model.createInstance(id);
     instance.transform = buildDecorationTransform(x, y, z, rotation, scale);
     instance.updateTransforms();
     instance.computeSkinningMatrix();
@@ -716,7 +751,7 @@
 </script>
 
 <main class="relative grid justify-start">
-  <canvas class="absolute inset-0 bg-white" bind:this={canvas}></canvas>
+  <canvas tabindex="0" class="absolute inset-0 bg-white" bind:this={canvas}></canvas>
   <div
     class="relative z-10 grid justify-start gap-4 top-4 left-4 bg-aurora-gray-1400 border-2 border-aurora-gray-1200 p-4 rounded"
   >
@@ -797,14 +832,25 @@
     </div>
 
     {#if selectedArea}
-      <div class="flex gap-2 items-center ">
+      <div class="flex gap-2 items-center">
         <h2 class="flex-1">Rotation</h2>
-        <StyledInput class="flex-2" type="number" placeholder="Rotation (degrees)" bind:value={rotation} />
+        <StyledInput
+          class="flex-2"
+          type="number"
+          placeholder="Rotation (degrees)"
+          bind:value={rotation}
+        />
       </div>
 
       <div class="flex gap-2 items-center">
         <h2 class="flex-1">Scale</h2>
-        <StyledInput class="flex-2" type="number" placeholder="Scale" bind:value={scale} step={0.1} />
+        <StyledInput
+          class="flex-2"
+          type="number"
+          placeholder="Scale"
+          bind:value={scale}
+          step={0.1}
+        />
       </div>
     {/if}
   </div>
