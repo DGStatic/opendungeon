@@ -32,10 +32,9 @@
     const uri = getMediaUrl(mediaId);
     modelId = await renderer.createDynamicGLBElement(uri);
     const model = renderer.getAndUseElement<DynamicModel>(modelId); // TODO: use static model
-    const inst = model.createInstance();
+    const inst = model.createInstance(crypto.randomUUID());
     const transform = GLM.mat4.create();
     GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(0, 0, 0));
-    // GLM.mat4.rotateX(transform, transform, degToRad(90));
     inst.transform = transform;
     inst.updateTransforms();
     inst.computeSkinningMatrix();

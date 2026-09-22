@@ -222,7 +222,7 @@
               decorationModelLookup[decoration] = modelId;
               const model = renderer.getAndUseElement<DynamicModel>(modelId);
               for (const decoration of levelData.objects.decorations) {
-                const instance = model.createInstance();
+                const instance = model.createInstance(decoration.id);
                 const transform = GLM.mat4.create();
                 GLM.mat4.translate(
                   transform,
@@ -525,7 +525,7 @@
     const uri = getMediaUrl(mediaId);
     const modelId = await renderer.createDynamicGLBElement(uri);
     const model = renderer.getElement<DynamicModel>(modelId);
-    const instance = model.createInstance();
+    const instance = model.createInstance(crypto.randomUUID());
     const transform = GLM.mat4.create();
     GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, 0));
     instance.transform = transform;

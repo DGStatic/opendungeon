@@ -9,6 +9,8 @@ export enum Key {
   Delete = "Delete",
   Escape = "Escape",
   Control = "Control",
+  C = "c",
+  V = "v",
 }
 
 export type GameMouseClearEvent = { type: "clear" };
@@ -47,6 +49,7 @@ export type GameMouseEvent =
 export type GameKeyPressEvent = {
   type: "press";
   key: string;
+  ctrl: boolean;
 };
 
 export type GameKeyEvent = GameKeyPressEvent;
@@ -117,11 +120,10 @@ export default class Controller {
     });
 
     canvas.addEventListener("keydown", (event) => {
-      event.preventDefault();
-
       this.keyEvents.push({
         type: "press",
         key: event.key,
+        ctrl: event.ctrlKey
       });
     });
   }

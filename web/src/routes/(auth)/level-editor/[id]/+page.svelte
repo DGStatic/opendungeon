@@ -66,6 +66,7 @@
   let rotation: string | number = $state(0);
   let scale: string | number = $state(1);
   let selectedDecorations: APILevelDecorationData[] = [];
+  let copiedDecorations: APILevelDecorationData[] = [];
   let decorationInstanceById: Record<string, ModelInstance> = {};
   const decorationModelLookup: Record<string, number> = {};
 
@@ -91,35 +92,28 @@
 
     const rotationDelta = rotation - selectedArea.rotation;
     const scaleDelta = scale / selectedArea.scale;
-    if (rotationDelta === 0 && scaleDelta === 0) {
+    if (rotationDelta === 0 && scaleDelta <= 0) {
       return;
     }
 
     // for each selected decoration, rotate around the center of the selected area and scale and translate relative to the area
     const pivot: GLM.vec2 = [selectedArea.center.x, selectedArea.center.y];
     for (const decoration of selectedDecorations) {
-      const decorationIndex = levelData.objects.decorations.findIndex(
-        (d) => d.id === decoration.id,
-      );
-      assert(decorationIndex !== -1, "selected decoration not found in level data");
-      const d = levelData.objects.decorations[decorationIndex];
-
       const position = GLM.vec2.create();
-      GLM.vec2.rotate(position, [d.x, d.y], pivot, degToRad(rotationDelta));
+      GLM.vec2.rotate(position, [decoration.x, decoration.y], pivot, degToRad(rotationDelta));
       GLM.vec2.sub(position, position, pivot);
       GLM.vec2.scaleAndAdd(position, pivot, position, scaleDelta);
-      d.x = position[0];
-      d.y = position[1];
-      d.rotation += rotationDelta;
-      d.scale *= scaleDelta;
-      levelData.objects.decorations[decorationIndex] = d;
+      decoration.x = position[0];
+      decoration.y = position[1];
+      decoration.rotation += rotationDelta;
+      decoration.scale *= scaleDelta;
 
-      decorationInstanceById[d.id].transform = buildDecorationTransform(
-        d.x,
-        d.y,
-        d.z,
-        d.rotation,
-        d.scale,
+      decorationInstanceById[decoration.id].transform = buildDecorationTransform(
+        decoration.x,
+        decoration.y,
+        decoration.z,
+        decoration.rotation,
+        decoration.scale,
       );
     }
 
@@ -442,40 +436,8 @@
               }
             }
           } else if (!selectedArea) {
-            // select all decorations in the area
-            let minY = Math.min(dragStartCoord!.y, dragCurrentCoord.y);
-            let maxY = Math.max(dragStartCoord!.y, dragCurrentCoord.y);
-            let minX = Math.min(dragStartCoord!.x, dragCurrentCoord.x);
-            let maxX = Math.max(dragStartCoord!.x, dragCurrentCoord.x);
-            const decorationsToSelect = levelData.objects.decorations.filter(
-              (decoration) =>
-                decoration.x >= minX &&
-                decoration.x <= maxX &&
-                decoration.y >= minY &&
-                decoration.y <= maxY,
-            );
-            if (decorationsToSelect.length > 0) {
-              const decorationsByX = decorationsToSelect.toSorted((a, b) => a.x - b.x);
-              const decorationsByY = decorationsToSelect.toSorted((a, b) => a.y - b.y);
-              minX = decorationsByX[0].x - 1 * decorationsByX[0].scale;
-              maxX = decorationsByX.at(-1)!.x + 1 * decorationsByX.at(-1)!.scale;
-              minY = decorationsByY[0].y - 1 * decorationsByY[0].scale;
-              maxY = decorationsByY.at(-1)!.y + 1 * decorationsByY.at(-1)!.scale;
-              selectedArea = {
-                center: new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
-                width:
-                  decorationsToSelect.length === 1
-                    ? Math.max(1, 2 * decorationsToSelect[0].scale)
-                    : Math.max(maxX - minX, 2),
-                height:
-                  decorationsToSelect.length === 1
-                    ? Math.max(1, 2 * decorationsToSelect[0].scale)
-                    : Math.max(maxY - minY, 2),
-                rotation: 0,
-                scale: 1,
-              };
-              selectedDecorations = decorationsToSelect;
-            }
+            // select all decorations in a rectangle created using dragStartCoord and dragCurrentCoord
+            selectDecorations();
           }
         } else if (event.button === MouseButton.Right) {
           // erase
@@ -498,6 +460,7 @@
       if (event.button === MouseButton.Left) {
         // select the closest decoration within an area
         selectedArea = null;
+        selectedDecorations = [];
         const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
         const nearestDecoration = levelData.objects.decorations
           .sort(
@@ -561,20 +524,14 @@
           const deltaY = dragCurrentCoord.y - selectedArea.center.y;
           selectedArea.center = new Cartesian(dragCurrentCoord.x, dragCurrentCoord.y);
           for (const selected of selectedDecorations) {
-            const index = levelData.objects.decorations.findIndex(
-              (decoration) => decoration.id === selected.id,
-            )!;
-            assert(index !== -1, "selected decoration not found in level data");
-            const decoration = levelData.objects.decorations[index];
-            decoration.x += deltaX;
-            decoration.y += deltaY;
-            levelData.objects.decorations[index] = decoration;
-            decorationInstanceById[decoration.id].transform = buildDecorationTransform(
-              decoration.x,
-              decoration.y,
-              decoration.z,
-              decoration.rotation,
-              decoration.scale,
+            selected.x += deltaX;
+            selected.y += deltaY;
+            decorationInstanceById[selected.id].transform = buildDecorationTransform(
+              selected.x,
+              selected.y,
+              selected.z,
+              selected.rotation,
+              selected.scale,
             );
           }
         }
@@ -612,27 +569,65 @@
   }
 
   function handleKeyPress(event: GameKeyEvent) {
-    switch (event.key) {
-      case Key.Backspace:
-      case Key.Delete:
-        // delete all selected decorations and clear selected area
-        for (const decoration of selectedDecorations) {
-          decorationInstanceById[decoration.id].model.deleteInstance(decoration.id);
-          const decorationIndex = levelData.objects.decorations.findIndex(
-            (d) => d.id === decoration.id,
-          );
-          assert(decorationIndex !== -1, "selected decoration not found in level data");
-          levelData.objects.decorations.splice(decorationIndex, 1);
-        }
-        selectedArea = null;
-        selectedDecorations = [];
-        break;
-      case Key.Escape:
-        selectedArea = null;
-        selectedDecorations = [];
-        selectedTexture = null;
-        selectedDecoration = null;
-        break;
+    if (event.ctrl) {
+      switch (event.key) {
+        case Key.C:
+          // copy selection
+          copiedDecorations = [...selectedDecorations];
+          break;
+        case Key.V:
+          // paste selection
+          if (copiedDecorations.length > 0) {
+            selectedDecorations = [];
+
+            for (const decoration of copiedDecorations) {
+              const decorationCopy = { ...decoration };
+              decorationCopy.id = crypto.randomUUID();
+              decorationCopy.x += 1;
+              decorationCopy.y -= 1;
+              levelData.objects.decorations.push(decorationCopy);
+              selectedDecorations.push(decorationCopy);
+              createDecorationInstance(
+                decorationCopy.id,
+                levelData.decorations[decorationCopy.index],
+                decorationCopy.x,
+                decorationCopy.y,
+                decorationCopy.z,
+                decorationCopy.rotation,
+                decorationCopy.scale,
+              );
+            }
+
+            copiedDecorations = [...selectedDecorations];
+
+            selectDecorations(selectedDecorations);
+          }
+
+          break;
+      }
+    } else {
+      switch (event.key) {
+        case Key.Backspace:
+        case Key.Delete:
+          // delete all selected decorations and clear selected area
+          for (const decoration of selectedDecorations) {
+            decorationInstanceById[decoration.id].model.deleteInstance(decoration.id);
+            const decorationIndex = levelData.objects.decorations.findIndex(
+              (d) => d.id === decoration.id,
+            );
+            assert(decorationIndex !== -1, "selected decoration not found in level data");
+            levelData.objects.decorations.splice(decorationIndex, 1);
+          }
+          selectedArea = null;
+          selectedDecorations = [];
+          break;
+        case Key.Escape:
+          selectedArea = null;
+          selectedDecorations = [];
+          selectedTexture = null;
+          selectedDecoration = null;
+          break;
+      }
     }
   }
 
@@ -690,6 +685,48 @@
     instance.computeSkinningMatrix();
     decorationInstanceById[id] = instance;
     return instance;
+  }
+
+  function selectDecorations(decorationsToSelect: APILevelDecorationData[] = []) {
+    let minX: number, maxX: number, minY: number, maxY: number;
+    if (dragCurrentCoord && dragStartCoord) {
+      minY = Math.min(dragStartCoord!.y, dragCurrentCoord.y);
+      maxY = Math.max(dragStartCoord!.y, dragCurrentCoord.y);
+      minX = Math.min(dragStartCoord!.x, dragCurrentCoord.x);
+      maxX = Math.max(dragStartCoord!.x, dragCurrentCoord.x);
+      if (decorationsToSelect.length === 0) {
+        decorationsToSelect = levelData.objects.decorations.filter(
+          (decoration) =>
+            decoration.x >= minX &&
+            decoration.x <= maxX &&
+            decoration.y >= minY &&
+            decoration.y <= maxY,
+        );
+      }
+    }
+
+    if (decorationsToSelect.length > 0) {
+      const decorationsByX = decorationsToSelect.toSorted((a, b) => a.x - b.x);
+      const decorationsByY = decorationsToSelect.toSorted((a, b) => a.y - b.y);
+      minX = decorationsByX[0].x - 1 * decorationsByX[0].scale;
+      maxX = decorationsByX.at(-1)!.x + 1 * decorationsByX.at(-1)!.scale;
+      minY = decorationsByY[0].y - 1 * decorationsByY[0].scale;
+      maxY = decorationsByY.at(-1)!.y + 1 * decorationsByY.at(-1)!.scale;
+      selectedArea = {
+        center: new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
+        width:
+          decorationsToSelect.length === 1
+            ? Math.max(1, 2 * decorationsToSelect[0].scale)
+            : Math.max(maxX - minX, 2),
+        height:
+          decorationsToSelect.length === 1
+            ? Math.max(1, 2 * decorationsToSelect[0].scale)
+            : Math.max(maxY - minY, 2),
+        rotation: 0,
+        scale: 1,
+      };
+      selectedDecorations = decorationsToSelect;
+    }
   }
 
   function drawRectangle(
@@ -814,6 +851,7 @@
                   loading = true;
                   selectedTexture = null;
                   selectedArea = null;
+                  selectedDecorations = [];
                   handleLoadDecoration(decoration).then(() => {
                     loading = false;
                     selectedDecoration = decoration.key;
