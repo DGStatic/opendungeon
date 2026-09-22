@@ -123,7 +123,7 @@ export default class Controller {
       this.keyEvents.push({
         type: "press",
         key: event.key,
-        ctrl: event.ctrlKey
+        ctrl: event.ctrlKey,
       });
     });
   }
