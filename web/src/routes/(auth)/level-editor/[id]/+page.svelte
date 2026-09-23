@@ -164,7 +164,7 @@
       Promise.all(
         levelData.decorations.map(async (decoration) => {
           const uri = getMediaUrl(decorationMediaLookup[decoration]);
-          const modelId = await renderer.createDynamicGLBElement(uri); // TODO: use static model
+          const modelId = await renderer.createStaticGLBElement(uri); // TODO: use static model
           decorationModelLookup[decoration] = modelId;
         }),
       ).then(() => {

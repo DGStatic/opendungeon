@@ -6,8 +6,7 @@
   import { degToRad } from "$lib/point";
   import { OrthographicCamera, type Camera } from "$lib/renderer/camera";
   import { getMediaUrl } from "$lib/api";
-  import type ModelInstance from "$lib/renderer/model/instance";
-  import type DynamicModel from "$lib/renderer/model/dynamic";
+  import type StaticModel from "$lib/renderer/model/static";
 
   type Props = HTMLAttributes<HTMLCanvasElement> & {
     mediaId: string;
@@ -17,9 +16,10 @@
   let { mediaId, autoRotate = false, class: customClass }: Props = $props();
   let renderer: Renderer;
   let camera: Camera;
+  let transform: GLM.mat4 = GLM.mat4.create();
   let canvas = $state<HTMLCanvasElement>();
   let modelId: number | null = $state(null);
-  let instance: ModelInstance | null;
+  let isLoading = $state(true);
 
   onMount(async () => {
     renderer = new Renderer(canvas!, {
@@ -30,36 +30,32 @@
     camera.rotateX(degToRad(15));
     GLM.mat4.translate(camera.projection, camera.projection, GLM.vec3.fromValues(0, -1, 0));
     const uri = getMediaUrl(mediaId);
-    modelId = await renderer.createDynamicGLBElement(uri);
-    const model = renderer.getAndUseElement<DynamicModel>(modelId); // TODO: use static model
-    const inst = model.createInstance(crypto.randomUUID());
-    const transform = GLM.mat4.create();
+    modelId = await renderer.createStaticGLBElement(uri);
     GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(0, 0, 0));
-    inst.transform = transform;
-    inst.updateTransforms();
-    inst.computeSkinningMatrix();
-    instance = inst;
+    isLoading = false;
 
     loop();
   });
 
   function tick() {
-    if (!autoRotate || !instance) {
+    if (!autoRotate || isLoading) {
       return;
     }
   }
 
   function draw() {
-    if (!renderer || !instance) {
+    if (!renderer || isLoading) {
       return;
     }
 
     renderer.clear();
 
     if (autoRotate) {
-      GLM.mat4.rotateY(instance?.transform, instance?.transform, degToRad(-0.5));
+      GLM.mat4.rotateY(transform, transform, degToRad(-0.5));
     }
-    const model = renderer.getElement<DynamicModel>(modelId!);
+    const model = renderer.getAndUseElement<StaticModel>(modelId!);
+    const buffer = model.allocate(1);
+    buffer.set(transform, 0);
     model.setCamera(camera);
     model.draw();
   }
