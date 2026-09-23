@@ -1,57 +1,43 @@
 import { type Camera } from "$lib/renderer/camera";
 import { MAT4_FLOAT_SIZE } from "$lib/renderer/consts";
-import type { RenderElement } from "$lib/renderer/element";
+import type { BatchRenderElement } from "$lib/renderer/element";
 import Shader from "$lib/renderer/shader";
-import * as GLM from "gl-matrix";
-import {
-  type Animation,
-  type GLTFAlphaMode,
-  type Material,
-  type Mesh,
-  type Node,
-  type Skin,
-} from "$lib/renderer/model/types";
-import ModelInstance from "$lib/renderer/model/instance";
+import { type GLTFAlphaMode, type Material, type Mesh, type Node } from "$lib/renderer/model/types";
+import ArenaAllocator from "$lib/renderer/arena";
 import { DEFAULT_MATERIAL, WHITE } from "$lib/renderer/model/consts";
 
-export default class DynamicModel implements RenderElement {
+export default class StaticModel implements BatchRenderElement {
   private shader: Shader;
 
-  readonly animations: Record<string, Animation>;
   private buffers: WebGLBuffer[];
   private materials: Material[];
   private meshes: Mesh[];
   readonly nodes: Node[];
-  readonly roots: number[];
-  readonly skins: Skin[];
   private textures: WebGLTexture[];
 
-  readonly baseTRS: Float32Array;
-  private instances: Record<string, ModelInstance>;
+  private transforms: Float32Array;
+  private instanceBuffer: WebGLBuffer;
+  private instanceArena: ArenaAllocator;
 
   constructor(
     shader: Shader,
-    animations: Record<string, Animation>,
     buffers: WebGLBuffer[],
     materials: Material[],
     meshes: Mesh[],
     textures: WebGLTexture[],
     nodes: Node[],
-    roots: number[],
-    skins: Skin[],
-    trsTransforms: Float32Array,
+    transforms: Float32Array,
+    instanceBuffer: WebGLBuffer,
   ) {
     this.shader = shader;
-    this.animations = animations;
     this.buffers = buffers;
     this.materials = materials;
     this.meshes = meshes;
     this.nodes = nodes;
     this.textures = textures;
-    this.roots = roots;
-    this.skins = skins;
-    this.baseTRS = trsTransforms;
-    this.instances = {};
+    this.transforms = transforms;
+    this.instanceBuffer = instanceBuffer;
+    this.instanceArena = new ArenaAllocator(this.instanceSize, 1);
   }
 
   get instanceSize(): number {
@@ -70,6 +56,8 @@ export default class DynamicModel implements RenderElement {
     for (const texture of this.textures) {
       this.shader.gl.deleteTexture(texture);
     }
+
+    this.shader.gl.deleteBuffer(this.instanceBuffer);
     this.shader.destroy();
   }
 
@@ -77,40 +65,32 @@ export default class DynamicModel implements RenderElement {
     this.shader.use();
   }
 
-  createInstance(id: string): ModelInstance {
-    const instance = new ModelInstance(this);
-    this.instances[id] = instance;
-    return instance;
-  }
-
-  deleteInstance(id: string) {
-    delete this.instances[id];
+  allocate(count: number): Float32Array {
+    return this.instanceArena.allocate(count);
   }
 
   draw() {
-    const instances = Object.values(this.instances);
-    if (instances.length <= 0) {
+    const count = this.instanceArena.size;
+    if (count <= 0) {
       return;
     }
 
     const gl = this.shader.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.instanceArena.buffer, gl.DYNAMIC_DRAW);
 
     // Pass 1: opaque + mask (write depth, no blending).
     gl.depthMask(true);
     gl.disable(gl.BLEND);
-    for (const instance of instances) {
-      for (let i = 0; i < this.nodes.length; i++) {
-        this.drawNode(i, instance, (mode) => mode !== "BLEND");
-      }
+    for (let i = 0; i < this.nodes.length; i++) {
+      this.drawNode(i, count, (mode) => mode !== "BLEND");
     }
 
     // Pass 2: blended (read depth but don't write, blend enabled).
     gl.enable(gl.BLEND);
     gl.depthMask(false);
-    for (const instance of instances) {
-      for (let i = 0; i < this.nodes.length; i++) {
-        this.drawNode(i, instance, (mode) => mode === "BLEND");
-      }
+    for (let i = 0; i < this.nodes.length; i++) {
+      this.drawNode(i, count, (mode) => mode === "BLEND");
     }
 
     // restore defaults for the rest of the frame
@@ -119,11 +99,13 @@ export default class DynamicModel implements RenderElement {
 
     // unbind for a clean state
     gl.bindTexture(gl.TEXTURE_2D, null);
+
+    this.instanceArena.reset();
   }
 
   private drawNode(
     nodeIndex: number,
-    instance: ModelInstance,
+    count: number,
     accept: (alphaMode: GLTFAlphaMode) => boolean,
   ) {
     const node = this.nodes[nodeIndex];
@@ -131,7 +113,7 @@ export default class DynamicModel implements RenderElement {
       return;
     }
 
-    const nodeTransform = instance.globals.subarray(
+    const nodeTransform = this.transforms.subarray(
       MAT4_FLOAT_SIZE * nodeIndex,
       MAT4_FLOAT_SIZE * (nodeIndex + 1),
     );
@@ -140,7 +122,7 @@ export default class DynamicModel implements RenderElement {
     const gl = this.shader.gl;
     let uniformSet = false;
 
-    for (const { vertexArray, drawMode, indices, material: matIndex } of mesh.primitives) {
+    for (const { vertexArray, drawMode, material: matIndex, indices } of mesh.primitives) {
       const material = matIndex === undefined ? DEFAULT_MATERIAL : this.materials[matIndex]!;
       const alphaMode: GLTFAlphaMode = material.alphaMode ?? "OPAQUE";
       if (!accept(alphaMode)) {
@@ -148,14 +130,7 @@ export default class DynamicModel implements RenderElement {
       }
 
       if (!uniformSet) {
-        const model = GLM.mat4.create();
-        GLM.mat4.mul(model, instance.transform, nodeTransform);
-        this.setUniformMatrix4fv("u_model", model as Float32Array);
-
-        if (node.skin !== undefined) {
-          const jointMatrix = instance.jointMatrices[node.skin]; // pick the skin
-          this.setUniformMatrix4fv("u_joint_matrix[0]", jointMatrix);
-        }
+        this.setUniformMatrix4fv("u_node_transform", nodeTransform);
         uniformSet = true;
       }
 
@@ -169,14 +144,10 @@ export default class DynamicModel implements RenderElement {
         this.setUniform1i("u_texture", 0);
         this.setUniform4fv("u_base_color", baseColorFactor as Float32Array);
       } else if (baseColorFactor) {
-        if (this.textures.length > 0) {
-          this.setUniform1i("u_has_texture", 0);
-        }
+        this.setUniform1i("u_has_texture", 0);
         this.setUniform4fv("u_base_color", baseColorFactor as Float32Array);
       } else {
-        if (this.textures.length > 0) {
-          this.setUniform1i("u_has_texture", 0);
-        }
+        this.setUniform1i("u_has_texture", 0);
         this.setUniform4fv("u_base_color", WHITE);
       }
 
@@ -192,7 +163,13 @@ export default class DynamicModel implements RenderElement {
       }
 
       gl.bindVertexArray(vertexArray);
-      gl.drawElements(drawMode, indices.count, indices.componentType, indices.byteOffset ?? 0);
+      gl.drawElementsInstanced(
+        drawMode,
+        indices.count,
+        indices.componentType,
+        indices.byteOffset ?? 0,
+        count,
+      );
     }
   }
 
@@ -202,31 +179,38 @@ export default class DynamicModel implements RenderElement {
   }
 
   private setUniformMatrix4fv(name: string, value: Float32Array | number[]) {
-    const location = this.getUniformLocation(name);
-    this.shader.gl.uniformMatrix4fv(location, false, value);
-  }
-
-  private setUniform4fv(name: string, value: Float32Array | number[]) {
-    const location = this.getUniformLocation(name);
-    this.shader.gl.uniform4fv(location, value);
-  }
-
-  private setUniform1i(name: string, value: number) {
-    const location = this.getUniformLocation(name);
-    this.shader.gl.uniform1i(location, value);
-  }
-
-  private setUniform1f(name: string, value: number) {
-    const location = this.getUniformLocation(name);
-    this.shader.gl.uniform1f(location, value);
-  }
-
-  private getUniformLocation(name: string): WebGLUniformLocation {
     const location = this.shader.uniformLocations.get(name);
     if (location === undefined) {
       throw new Error(`failed to get location for uniform '${name}'`);
     }
 
-    return location;
+    this.shader.gl.uniformMatrix4fv(location, false, value);
+  }
+
+  private setUniform4fv(name: string, value: Float32Array | number[]) {
+    const location = this.shader.uniformLocations.get(name);
+    if (location === undefined) {
+      throw new Error(`failed to get location for uniform '${name}'`);
+    }
+
+    this.shader.gl.uniform4fv(location, value);
+  }
+
+  private setUniform1i(name: string, value: number) {
+    const location = this.shader.uniformLocations.get(name);
+    if (location === undefined) {
+      throw new Error(`failed to get location for uniform '${name}'`);
+    }
+
+    this.shader.gl.uniform1i(location, value);
+  }
+
+  private setUniform1f(name: string, value: number) {
+    const location = this.shader.uniformLocations.get(name);
+    if (location === undefined) {
+      throw new Error(`failed to get location for uniform '${name}'`);
+    }
+
+    this.shader.gl.uniform1f(location, value);
   }
 }
