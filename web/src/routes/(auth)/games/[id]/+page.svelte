@@ -10,7 +10,14 @@
     type PingMessage,
   } from "$lib/messages";
   import { type GameMessage } from "$lib/game";
-  import { callAPI, getMediaUrl, getSocketUrl, type APILevelData, type APIProfile } from "$lib/api";
+  import {
+    callAPI,
+    getMediaUrl,
+    getSocketUrl,
+    type APILevelData,
+    type APILevelDecorationData,
+    type APIProfile,
+  } from "$lib/api";
   import Controller, {
     type GameMouseMoveEvent,
     type GameMousePressEvent,
@@ -34,6 +41,8 @@
   import Animator from "$lib/renderer/animator";
   import ModelInstance from "$lib/renderer/model/instance";
   import DynamicModel from "$lib/renderer/model/dynamic";
+  import type StaticModel from "$lib/renderer/model/static";
+  import { MAT4_FLOAT_SIZE } from "$lib/renderer/consts";
 
   let { data }: PageProps = $props();
 
@@ -69,6 +78,7 @@
   let input: { type: "none" } | { type: "dragging"; button: number } = { type: "none" };
   let rectId: number;
   const decorationModelLookup: Record<string, number> = {};
+  const decorationsByKey: Record<string, APILevelDecorationData[]> = {};
 
   function getMessageId() {
     const id = messageIdHandle;
@@ -213,33 +223,16 @@
           );
 
           Promise.all(
-            levelData.decorations.map(async (decoration) => {
+            levelData.decorations.map(async (decoration, i) => {
               if (!levelData?.objects.decorations) {
                 return;
               }
               const uri = getMediaUrl(decorationMediaLookup[decoration]);
-              const modelId = await renderer.createDynamicGLBElement(uri);
+              const modelId = await renderer.createStaticGLBElement(uri);
               decorationModelLookup[decoration] = modelId;
-              const model = renderer.getAndUseElement<DynamicModel>(modelId);
-              for (const decoration of levelData.objects.decorations) {
-                const instance = model.createInstance(decoration.id);
-                const transform = GLM.mat4.create();
-                GLM.mat4.translate(
-                  transform,
-                  transform,
-                  GLM.vec3.fromValues(decoration.x, decoration.y, decoration.z),
-                );
-                GLM.mat4.rotateX(transform, transform, degToRad(90));
-                GLM.mat4.rotateY(transform, transform, degToRad(decoration.rotation));
-                GLM.mat4.scale(
-                  transform,
-                  transform,
-                  GLM.vec3.fromValues(decoration.scale, decoration.scale, decoration.scale),
-                );
-                instance.transform = transform;
-                instance.updateTransforms();
-                instance.computeSkinningMatrix();
-              }
+              decorationsByKey[decoration] = levelData.objects.decorations.filter(
+                (d) => d.index === i,
+              );
             }),
           ).then(() => (loading = false));
 
@@ -333,9 +326,23 @@
 
     // draw the decorations
     for (const decoration of levelData.decorations) {
-      const model = renderer.getAndUseElement<DynamicModel>(decorationModelLookup[decoration]);
-      model.setCamera(camera);
-      model.draw();
+      const model = renderer.getAndUseElement<StaticModel>(decorationModelLookup[decoration]);
+      const decorations = decorationsByKey[decoration];
+      if (decorations.length > 0) {
+        const buffer = model.allocate(decorations.length);
+        for (let j = 0; j < decorations.length; j++) {
+          const offset = j * MAT4_FLOAT_SIZE;
+          const transform = GLM.mat4.create();
+          const d = decorations[j];
+          GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(d.x, d.y, d.z));
+          GLM.mat4.rotateZ(transform, transform, degToRad(d.rotation));
+          GLM.mat4.rotateX(transform, transform, degToRad(90));
+          GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(d.scale, d.scale, d.scale));
+          buffer.set(transform, offset);
+        }
+        model.setCamera(camera);
+        model.draw();
+      }
     }
 
     // draw pings
