@@ -18,7 +18,7 @@ type LevelData struct {
 			X        float32   `json:"x"`
 			Y        float32   `json:"y"`
 			Z        float32   `json:"z"`        // defaults to 0.1 for now
-			Rotation int       `json:"rotation"` // degrees on y axis
+			Rotation int       `json:"rotation"` // degrees on z axis
 			Scale    float32   `json:"scale"`    // multiplier for all axes
 		} `json:"decorations"`
 	} `json:"objects"`

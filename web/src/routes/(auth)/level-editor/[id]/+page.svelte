@@ -28,11 +28,11 @@
   import { resolve } from "$app/paths";
   import { goto } from "$app/navigation";
   import assert from "$lib/assert";
-  import DynamicModel from "$lib/renderer/model/dynamic";
-  import ModelInstance from "$lib/renderer/model/instance";
   import StyledButton from "$lib/components/StyledButton.svelte";
   import StyledInput from "$lib/components/StyledInput.svelte";
   import ModelViewer from "$lib/components/ModelViewer.svelte";
+  import type StaticModel from "$lib/renderer/model/static";
+  import { MAT4_FLOAT_SIZE } from "$lib/renderer/consts";
 
   const GRID_WIDTH = 256;
   const GRID_HEIGHT = 256;
@@ -67,8 +67,8 @@
   let scale: string | number = $state(1);
   let selectedDecorations: APILevelDecorationData[] = [];
   let copiedDecorations: APILevelDecorationData[] = [];
-  let decorationInstanceById: Record<string, ModelInstance> = {};
   const decorationModelLookup: Record<string, number> = {};
+  const decorationsByKey: Record<string, APILevelDecorationData[]> = {};
 
   $effect(() => {
     if (!selectedArea) {
@@ -107,14 +107,6 @@
       decoration.y = position[1];
       decoration.rotation += rotationDelta;
       decoration.scale *= scaleDelta;
-
-      decorationInstanceById[decoration.id].transform = buildDecorationTransform(
-        decoration.x,
-        decoration.y,
-        decoration.z,
-        decoration.rotation,
-        decoration.scale,
-      );
     }
 
     selectedArea.rotation = rotation;
@@ -162,23 +154,13 @@
       }),
     ).then(() =>
       Promise.all(
-        levelData.decorations.map(async (decoration) => {
+        levelData.decorations.map(async (decoration, i) => {
           const uri = getMediaUrl(decorationMediaLookup[decoration]);
           const modelId = await renderer.createStaticGLBElement(uri); // TODO: use static model
           decorationModelLookup[decoration] = modelId;
+          decorationsByKey[decoration] = levelData.objects.decorations.filter((d) => d.index === i);
         }),
       ).then(() => {
-        for (const decoration of levelData.objects.decorations) {
-          createDecorationInstance(
-            decoration.id,
-            levelData.decorations[decoration.index],
-            decoration.x,
-            decoration.y,
-            decoration.z,
-            decoration.rotation,
-            decoration.scale,
-          );
-        }
         loading = false;
       }),
     );
@@ -357,9 +339,23 @@
 
     // draw the decorations
     for (const decoration of levelData.decorations) {
-      const model = renderer.getAndUseElement<DynamicModel>(decorationModelLookup[decoration]);
-      model.setCamera(camera);
-      model.draw();
+      const model = renderer.getAndUseElement<StaticModel>(decorationModelLookup[decoration]);
+      const decorations = decorationsByKey[decoration];
+      if (decorations.length > 0) {
+        const buffer = model.allocate(decorations.length);
+        for (let j = 0; j < decorations.length; j++) {
+          const offset = j * MAT4_FLOAT_SIZE;
+          const transform = GLM.mat4.create();
+          const d = decorations[j];
+          GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(d.x, d.y, d.z));
+          GLM.mat4.rotateZ(transform, transform, degToRad(d.rotation));
+          GLM.mat4.rotateX(transform, transform, degToRad(90));
+          GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(d.scale, d.scale, d.scale));
+          buffer.set(transform, offset);
+        }
+        model.setCamera(camera);
+        model.draw();
+      }
     }
   }
 
@@ -368,7 +364,7 @@
   }
 
   function handlePress(event: GameMousePressEvent) {
-    if (selectedDecoration && event.button !== MouseButton.Middle) {
+    if (selectedDecoration) {
       if (event.button === MouseButton.Left) {
         if (!levelData.decorations.includes(selectedDecoration)) {
           levelData.decorations.push(selectedDecoration);
@@ -384,10 +380,7 @@
           return;
         }
 
-        const id = crypto.randomUUID();
-        createDecorationInstance(id, selectedDecoration, coord.x, coord.y, 0.1, 0, 1); // TODO: handle different z positions
-        levelData.objects.decorations.push({
-          id,
+        addDecoration({
           index: decorationIndex,
           x: coord.x,
           y: coord.y,
@@ -526,13 +519,6 @@
           for (const selected of selectedDecorations) {
             selected.x += deltaX;
             selected.y += deltaY;
-            decorationInstanceById[selected.id].transform = buildDecorationTransform(
-              selected.x,
-              selected.y,
-              selected.z,
-              selected.rotation,
-              selected.scale,
-            );
           }
         }
       } else if (input.button === MouseButton.Right) {
@@ -582,20 +568,10 @@
 
             for (const decoration of copiedDecorations) {
               const decorationCopy = { ...decoration };
-              decorationCopy.id = crypto.randomUUID();
               decorationCopy.x += 1;
               decorationCopy.y -= 1;
-              levelData.objects.decorations.push(decorationCopy);
+              addDecoration(decorationCopy);
               selectedDecorations.push(decorationCopy);
-              createDecorationInstance(
-                decorationCopy.id,
-                levelData.decorations[decorationCopy.index],
-                decorationCopy.x,
-                decorationCopy.y,
-                decorationCopy.z,
-                decorationCopy.rotation,
-                decorationCopy.scale,
-              );
             }
 
             copiedDecorations = [...selectedDecorations];
@@ -611,12 +587,7 @@
         case Key.Delete:
           // delete all selected decorations and clear selected area
           for (const decoration of selectedDecorations) {
-            decorationInstanceById[decoration.id].model.deleteInstance(decoration.id);
-            const decorationIndex = levelData.objects.decorations.findIndex(
-              (d) => d.id === decoration.id,
-            );
-            assert(decorationIndex !== -1, "selected decoration not found in level data");
-            levelData.objects.decorations.splice(decorationIndex, 1);
+            removeDecoration(decoration);
           }
           selectedArea = null;
           selectedDecorations = [];
@@ -649,42 +620,26 @@
     }
 
     const uri = getMediaUrl(decoration.mediaId);
-    const modelId = await renderer.createDynamicGLBElement(uri); // TODO: use static model
+    const modelId = await renderer.createStaticGLBElement(uri); // TODO: use static model
     decorationModelLookup[decoration.key] = modelId;
     levelData.decorations.push(decoration.key);
+    decorationsByKey[decoration.key] = [];
   }
 
-  function buildDecorationTransform(
-    x: number,
-    y: number,
-    z: number,
-    rotation: number,
-    scale: number,
-  ): GLM.mat4 {
-    const transform = GLM.mat4.create();
-    GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, z));
-    GLM.mat4.rotateX(transform, transform, degToRad(90));
-    GLM.mat4.rotateY(transform, transform, degToRad(rotation));
-    GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(scale, scale, scale));
-    return transform;
+  function addDecoration(d: APILevelDecorationData) {
+    levelData.objects.decorations.push(d);
+    (decorationsByKey[levelData.decorations[d.index]] ??= []).push(d);
   }
 
-  function createDecorationInstance(
-    id: string,
-    key: string,
-    x: number,
-    y: number,
-    z: number,
-    rotation: number,
-    scale: number,
-  ): ModelInstance {
-    const model = renderer.getElement<DynamicModel>(decorationModelLookup[key]);
-    const instance = model.createInstance(id);
-    instance.transform = buildDecorationTransform(x, y, z, rotation, scale);
-    instance.updateTransforms();
-    instance.computeSkinningMatrix();
-    decorationInstanceById[id] = instance;
-    return instance;
+  function removeDecoration(d: APILevelDecorationData) {
+    const objects = levelData.objects.decorations;
+    const i = objects.findIndex((o) => o === d);
+    assert(i !== -1, "selected decoration not found in level data");
+    objects.splice(i, 1);
+
+    const lookup = decorationsByKey[levelData.decorations[d.index]];
+    const j = lookup.indexOf(d);
+    if (j !== -1) lookup.splice(j, 1);
   }
 
   function selectDecorations(decorationsToSelect: APILevelDecorationData[] = []) {
