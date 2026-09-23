@@ -74,6 +74,7 @@ func New(cfg Config) (http.Handler, error) {
 	// admin routes
 	mux.Handle("POST /api/admin/register", http.HandlerFunc(app.registerAdminUser))
 	mux.Handle("POST /api/admin/cell-textures", middlewares.Admin(http.HandlerFunc(app.createCellTexture)))
+	mux.Handle("POST /api/admin/decorations", middlewares.Admin(http.HandlerFunc(app.createDecoration)))
 
 	// auth routes
 	mux.Handle("POST /api/auth/register", http.HandlerFunc(app.registerUser))
@@ -91,6 +92,9 @@ func New(cfg Config) (http.Handler, error) {
 
 	// cell texture routes
 	mux.Handle("GET /api/cell-textures", middlewares.Auth(http.HandlerFunc(app.listCellTextures)))
+
+	// decorations routes
+	mux.Handle("GET /api/decorations", middlewares.Auth(http.HandlerFunc(app.listDecorations)))
 
 	// profile routes
 	mux.Handle("PUT /api/profiles/me", middlewares.Auth(http.HandlerFunc(app.upsertMyProfile)))

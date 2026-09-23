@@ -10,7 +10,14 @@
     type PingMessage,
   } from "$lib/messages";
   import { type GameMessage } from "$lib/game";
-  import { callAPI, getMediaUrl, getSocketUrl, type APILevelData, type APIProfile } from "$lib/api";
+  import {
+    callAPI,
+    getMediaUrl,
+    getSocketUrl,
+    type APILevelData,
+    type APILevelDecorationData,
+    type APIProfile,
+  } from "$lib/api";
   import Controller, {
     type GameMouseMoveEvent,
     type GameMousePressEvent,
@@ -32,8 +39,10 @@
   import { GameMenuTool } from "$lib/game";
   import GameToolMenu from "$lib/components/GameToolMenu.svelte";
   import Animator from "$lib/renderer/animator";
-  import type InstanceGLTF from "$lib/renderer/model/instance";
-  import DynamicGLTF from "$lib/renderer/model/dynamic";
+  import ModelInstance from "$lib/renderer/model/instance";
+  import DynamicModel from "$lib/renderer/model/dynamic";
+  import type StaticModel from "$lib/renderer/model/static";
+  import { MAT4_FLOAT_SIZE } from "$lib/renderer/consts";
 
   let { data }: PageProps = $props();
 
@@ -57,7 +66,7 @@
   let pings: Record<number, { point: Cartesian; opacity: number }> = {};
   let characters: {
     modelId: number;
-    instance: InstanceGLTF;
+    instance: ModelInstance;
   }[] = [];
   let pendingMessages: Message[] = [];
   let controller: Controller;
@@ -68,6 +77,8 @@
   let frameHandle = -1;
   let input: { type: "none" } | { type: "dragging"; button: number } = { type: "none" };
   let rectId: number;
+  const decorationModelLookup: Record<string, number> = {};
+  const decorationsByKey: Record<string, APILevelDecorationData[]> = {};
 
   function getMessageId() {
     const id = messageIdHandle;
@@ -188,9 +199,15 @@
             },
             {},
           );
+          const decorationMediaLookup = data.decorations.reduce<Record<string, string>>(
+            (prev, curr) => {
+              return { ...prev, [curr.key]: curr.mediaId };
+            },
+            {},
+          );
 
-          Promise.all([
-            ...levelData.textures.map(async (texture) => {
+          await Promise.all(
+            levelData.textures.map(async (texture) => {
               const uri = getMediaUrl(textureMediaLookup[texture]);
               return renderer
                 .loadTexture(texture, uri, {
@@ -203,10 +220,22 @@
                   throw e;
                 });
             }),
-            ...message.data.characters.map(async ({ mediaId, x, y }) => {
-              return handleLoadCharacter(mediaId, x, y);
+          );
+
+          Promise.all(
+            levelData.decorations.map(async (decoration, i) => {
+              if (!levelData?.objects.decorations) {
+                return;
+              }
+              const uri = getMediaUrl(decorationMediaLookup[decoration]);
+              const modelId = await renderer.createStaticGLBElement(uri);
+              decorationModelLookup[decoration] = modelId;
+              decorationsByKey[decoration] = levelData.objects.decorations.filter(
+                (d) => d.index === i,
+              );
             }),
-          ]).then(() => (loading = false));
+          ).then(() => (loading = false));
+
           break;
         }
       }
@@ -265,7 +294,7 @@
         }
 
         const texture = cell.texture;
-        if (texture === undefined || texture === null) {
+        if (texture === undefined || texture === null || texture < 0) {
           continue;
         }
 
@@ -295,6 +324,27 @@
       rect.draw();
     }
 
+    // draw the decorations
+    for (const decoration of levelData.decorations) {
+      const model = renderer.getAndUseElement<StaticModel>(decorationModelLookup[decoration]);
+      const decorations = decorationsByKey[decoration];
+      if (decorations.length > 0) {
+        const buffer = model.allocate(decorations.length);
+        for (let j = 0; j < decorations.length; j++) {
+          const offset = j * MAT4_FLOAT_SIZE;
+          const transform = GLM.mat4.create();
+          const d = decorations[j];
+          GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(d.x, d.y, d.z));
+          GLM.mat4.rotateZ(transform, transform, degToRad(d.rotation));
+          GLM.mat4.rotateX(transform, transform, degToRad(90));
+          GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(d.scale, d.scale, d.scale));
+          buffer.set(transform, offset);
+        }
+        model.setCamera(camera);
+        model.draw();
+      }
+    }
+
     // draw pings
     const pingEntries = Object.entries(pings);
     if (pingEntries.length >= 1) {
@@ -317,7 +367,7 @@
 
     // draw characters
     for (const character of characters) {
-      const model = renderer.getAndUseElement<DynamicGLTF>(character.modelId);
+      const model = renderer.getAndUseElement<DynamicModel>(character.modelId);
       model.setCamera(camera);
       model.draw();
     }
@@ -481,8 +531,8 @@
   async function handleLoadCharacter(mediaId: string, x: number, y: number) {
     const uri = getMediaUrl(mediaId);
     const modelId = await renderer.createDynamicGLBElement(uri);
-    const model = renderer.getElement<DynamicGLTF>(modelId);
-    const instance = model.createInstance();
+    const model = renderer.getElement<DynamicModel>(modelId);
+    const instance = model.createInstance(crypto.randomUUID());
     const transform = GLM.mat4.create();
     GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(x, y, 0));
     instance.transform = transform;

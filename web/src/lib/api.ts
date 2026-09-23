@@ -37,11 +37,28 @@ export type APICellTexture = {
   updatedAt: number;
 };
 
+export type APIDecoration = {
+  key: string;
+  displayName: string;
+  mediaId: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type APILevelMetaData = {
   id: string;
   name: string;
   createdAt: number;
   updatedAt: number;
+};
+
+export type APILevelDecorationData = {
+  index: number; // cannot be -1
+  x: number;
+  y: number;
+  z: number; // defaults to 0.1 for now
+  rotation: number; // degrees on the z axis, can add the others later
+  scale: number; // multiplier for all axes
 };
 
 export type APILevelData = {
@@ -50,8 +67,10 @@ export type APILevelData = {
   decorations: string[];
   grid: ({
     texture: number; // -1 indicates empty
-    decoration: number;
   } | null)[][];
+  objects: {
+    decorations: APILevelDecorationData[];
+  };
 };
 
 export type APILevel = APILevelMetaData & {

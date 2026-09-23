@@ -1,13 +1,22 @@
 <script lang="ts">
-  import { callAPI, getMediaUrl, type APICellTexture, type APILevelData } from "$lib/api";
+  import {
+    callAPI,
+    getMediaUrl,
+    type APICellTexture,
+    type APIDecoration,
+    type APILevelData,
+    type APILevelDecorationData,
+  } from "$lib/api";
   import Controller, {
+    type GameKeyEvent,
     type GameMouseMoveEvent,
     type GameMousePressEvent,
     type GameMouseReleaseEvent,
     type GameMouseScrollEvent,
+    Key,
     MouseButton,
   } from "$lib/controller";
-  import { Cartesian } from "$lib/point";
+  import { Cartesian, degToRad } from "$lib/point";
   import Rectangle from "$lib/rectangle";
   import Renderer from "$lib/renderer";
   import { OrthographicCamera, type Camera } from "$lib/renderer/camera";
@@ -19,6 +28,11 @@
   import { resolve } from "$app/paths";
   import { goto } from "$app/navigation";
   import assert from "$lib/assert";
+  import StyledButton from "$lib/components/StyledButton.svelte";
+  import StyledInput from "$lib/components/StyledInput.svelte";
+  import ModelViewer from "$lib/components/ModelViewer.svelte";
+  import type StaticModel from "$lib/renderer/model/static";
+  import { MAT4_FLOAT_SIZE } from "$lib/renderer/consts";
 
   const GRID_WIDTH = 256;
   const GRID_HEIGHT = 256;
@@ -29,16 +43,75 @@
   let levelId = $derived<string>(data.level.id);
   let levelName = $derived<string>(data.level.name ?? "");
   let selectedTexture = $state<string | null>(null);
+  let selectedDecoration = $state<string | null>(null);
   let loading = $state(true);
   let controller: Controller;
   let renderer: Renderer;
   let camera: Camera;
   let levelData: APILevelData;
   let frameHandle = -1;
-  let input: { type: "none" } | { type: "dragging"; button: number } = { type: "none" };
+  let input: { type: "none" } | { type: "dragging" | "down"; button: number } = {
+    type: "none",
+  };
   let dragStartCoord: Cartesian | null = null;
   let dragCurrentCoord: Cartesian | null = null;
   let rectId: number;
+  let selectedArea: {
+    center: Cartesian;
+    width: number;
+    height: number;
+    rotation: number;
+    scale: number;
+  } | null = $state(null);
+  let rotation: string | number = $state(0);
+  let scale: string | number = $state(1);
+  let selectedDecorations: APILevelDecorationData[] = [];
+  let copiedDecorations: APILevelDecorationData[] = [];
+  const decorationModelLookup: Record<string, number> = {};
+  const decorationsByKey: Record<string, APILevelDecorationData[]> = {};
+
+  $effect(() => {
+    if (!selectedArea) {
+      rotation = 0;
+      scale = 1;
+      return;
+    }
+
+    if (typeof rotation === "string") {
+      rotation = 0;
+    }
+    if (typeof scale === "string") {
+      scale = 1;
+    }
+
+    if (rotation > 360) {
+      rotation = 360;
+    } else if (rotation < -360) {
+      rotation = -360;
+    }
+
+    const rotationDelta = rotation - selectedArea.rotation;
+    const scaleDelta = scale / selectedArea.scale;
+    if (rotationDelta === 0 && scaleDelta <= 0) {
+      return;
+    }
+
+    // for each selected decoration, rotate around the center of the selected area and scale and translate relative to the area
+    const pivot: GLM.vec2 = [selectedArea.center.x, selectedArea.center.y];
+    for (const decoration of selectedDecorations) {
+      const position = GLM.vec2.create();
+      GLM.vec2.rotate(position, [decoration.x, decoration.y], pivot, degToRad(rotationDelta));
+      GLM.vec2.sub(position, position, pivot);
+      GLM.vec2.scaleAndAdd(position, pivot, position, scaleDelta);
+      decoration.x = position[0];
+      decoration.y = position[1];
+      decoration.rotation += rotationDelta;
+      decoration.scale *= scaleDelta;
+    }
+
+    selectedArea.rotation = rotation;
+    selectedArea.scale = scale;
+  });
 
   onMount(() => {
     controller = new Controller(canvas!);
@@ -55,6 +128,9 @@
           textures: [],
           decorations: [],
           grid: Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_HEIGHT).fill(null)),
+          objects: {
+            decorations: [],
+          },
         };
 
     rectId = renderer.createElement(Rectangle);
@@ -64,7 +140,11 @@
     const textureMediaLookup = data.cellTextures.reduce<Record<string, string>>((prev, curr) => {
       return { ...prev, [curr.key]: curr.mediaId };
     }, {});
+    const decorationMediaLookup = data.decorations.reduce<Record<string, string>>((prev, curr) => {
+      return { ...prev, [curr.key]: curr.mediaId };
+    }, {});
 
+    // load textures, then decorations to avoid melding
     Promise.all(
       levelData.textures.map((texture) => {
         const uri = getMediaUrl(textureMediaLookup[texture]);
@@ -72,8 +152,18 @@
           mode: "nearest",
         });
       }),
-    ).then(() => (loading = false));
-    // TODO: load decorations
+    ).then(() =>
+      Promise.all(
+        levelData.decorations.map(async (decoration, i) => {
+          const uri = getMediaUrl(decorationMediaLookup[decoration]);
+          const modelId = await renderer.createStaticGLBElement(uri); // TODO: use static model
+          decorationModelLookup[decoration] = modelId;
+          decorationsByKey[decoration] = levelData.objects.decorations.filter((d) => d.index === i);
+        }),
+      ).then(() => {
+        loading = false;
+      }),
+    );
 
     loop();
 
@@ -110,6 +200,14 @@
         }
       }
     }
+    for (const event of controller.getKeyEvents()) {
+      switch (event.type) {
+        case "press": {
+          handleKeyPress(event);
+          break;
+        }
+      }
+    }
   }
 
   function draw() {
@@ -128,7 +226,7 @@
         }
 
         const texture = cell.texture;
-        if (texture < 0) {
+        if (texture === undefined || texture === null || texture < 0) {
           continue;
         }
 
@@ -187,28 +285,76 @@
       const minX = Math.min(dragStartCoord.x, dragCurrentCoord.x);
       const maxX = Math.max(dragStartCoord.x, dragCurrentCoord.x);
 
-      const cells = [];
-      for (let y = minY; y <= maxY; y++) {
-        for (let x = minX; x <= maxX; x++) {
-          cells.push(new Cartesian(x, y));
+      if (!selectedArea) {
+        if (!selectedTexture && input.button === MouseButton.Left) {
+          const width = maxX - minX;
+          const height = maxY - minY;
+          drawRectangle(
+            rect,
+            new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
+            width,
+            height,
+            0,
+            new Float32Array([1, 1, 1, 1]),
+          );
+        } else {
+          const cells = [];
+          for (let y = minY; y <= maxY; y++) {
+            for (let x = minX; x <= maxX; x++) {
+              cells.push(new Cartesian(x, y));
+            }
+          }
+
+          if (cells.length >= 1) {
+            const buffer = rect.allocate(cells.length);
+            for (let i = 0; i < cells.length; i++) {
+              const model = GLM.mat4.create();
+              GLM.mat4.translate(model, model, GLM.vec3.fromValues(cells[i].x, cells[i].y, 2));
+              const offset = i * rect.instanceSize;
+              buffer.set(model, offset);
+              buffer.set(
+                input.button === MouseButton.Left
+                  ? new Float32Array([0, 1, 1, 0.4])
+                  : new Float32Array([1, 0, 0, 0.4]),
+                offset + model.length,
+              );
+            }
+            rect.draw();
+          }
         }
       }
+    }
 
-      if (cells.length >= 1) {
-        const buffer = rect.allocate(cells.length);
-        for (let i = 0; i < cells.length; i++) {
-          const model = GLM.mat4.create();
-          GLM.mat4.translate(model, model, GLM.vec3.fromValues(cells[i].x, cells[i].y, 2));
-          const offset = i * rect.instanceSize;
-          buffer.set(model, offset);
-          buffer.set(
-            input.button === MouseButton.Left
-              ? new Float32Array([0, 1, 1, 0.4])
-              : new Float32Array([1, 0, 0, 0.4]),
-            offset + model.length,
-          );
+    // draw selected area
+    if (selectedArea) {
+      drawRectangle(
+        rect,
+        selectedArea.center,
+        selectedArea.width * selectedArea.scale,
+        selectedArea.height * selectedArea.scale,
+        selectedArea.rotation,
+        new Float32Array([1, 1, 1, 1]),
+      );
+    }
+
+    // draw the decorations
+    for (const decoration of levelData.decorations) {
+      const model = renderer.getAndUseElement<StaticModel>(decorationModelLookup[decoration]);
+      const decorations = decorationsByKey[decoration];
+      if (decorations.length > 0) {
+        const buffer = model.allocate(decorations.length);
+        for (let j = 0; j < decorations.length; j++) {
+          const offset = j * MAT4_FLOAT_SIZE;
+          const transform = GLM.mat4.create();
+          const d = decorations[j];
+          GLM.mat4.translate(transform, transform, GLM.vec3.fromValues(d.x, d.y, d.z));
+          GLM.mat4.rotateZ(transform, transform, degToRad(d.rotation));
+          GLM.mat4.rotateX(transform, transform, degToRad(90));
+          GLM.mat4.scale(transform, transform, GLM.vec3.fromValues(d.scale, d.scale, d.scale));
+          buffer.set(transform, offset);
         }
-        rect.draw();
+        model.setCamera(camera);
+        model.draw();
       }
     }
   }
@@ -218,8 +364,40 @@
   }
 
   function handlePress(event: GameMousePressEvent) {
-    input = { type: "dragging", button: event.button };
-    dragStartCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
+    if (selectedDecoration) {
+      if (event.button === MouseButton.Left) {
+        if (!levelData.decorations.includes(selectedDecoration)) {
+          levelData.decorations.push(selectedDecoration);
+        }
+
+        const decorationIndex = levelData.decorations.findIndex(
+          (decoration) => decoration === selectedDecoration,
+        );
+        assert(decorationIndex !== -1, "selected decoration not found in level data");
+
+        const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+        if (coord.x < 0 || coord.x >= GRID_WIDTH || coord.y < 0 || coord.y >= GRID_HEIGHT) {
+          return;
+        }
+
+        addDecoration({
+          index: decorationIndex,
+          x: coord.x,
+          y: coord.y,
+          z: 0.1,
+          rotation: 0,
+          scale: 1,
+        });
+      }
+    } else {
+      input = { type: "down", button: event.button };
+      const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+      if (event.button === MouseButton.Left && !selectedTexture) {
+        dragStartCoord = coord;
+      } else {
+        dragStartCoord = coord.round();
+      }
+    }
   }
 
   function handleRelease(event: GameMouseReleaseEvent) {
@@ -230,26 +408,29 @@
         const maxY = Math.max(dragStartCoord.y, dragCurrentCoord.y);
         const minX = Math.min(dragStartCoord.x, dragCurrentCoord.x);
         const maxX = Math.max(dragStartCoord.x, dragCurrentCoord.x);
-        if (event.button === MouseButton.Left && selectedTexture) {
-          // paint
-          for (let y = minY; y <= maxY; y++) {
-            for (let x = minX; x <= maxX; x++) {
-              if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
-                continue;
+        if (event.button === MouseButton.Left) {
+          if (selectedTexture) {
+            // paint
+            for (let y = minY; y <= maxY; y++) {
+              for (let x = minX; x <= maxX; x++) {
+                if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
+                  continue;
+                }
+                if (!levelData.textures.includes(selectedTexture)) {
+                  levelData.textures.push(selectedTexture);
+                }
+                const textureIndex = levelData.textures.findIndex(
+                  (texture) => texture === selectedTexture,
+                );
+                assert(textureIndex !== -1, "Failed to insert and find texture");
+                levelData.grid[y][x] = {
+                  texture: textureIndex,
+                };
               }
-              if (!levelData.textures.includes(selectedTexture)) {
-                levelData.textures.push(selectedTexture);
-              }
-              const textureIndex = levelData.textures.findIndex(
-                (texture) => texture === selectedTexture,
-              );
-              assert(textureIndex !== -1, "Failed to insert and find texture");
-
-              levelData.grid[y][x] = {
-                texture: textureIndex,
-                decoration: -1,
-              };
             }
+          } else if (!selectedArea) {
+            // select all decorations in a rectangle created using dragStartCoord and dragCurrentCoord
+            selectDecorations();
           }
         } else if (event.button === MouseButton.Right) {
           // erase
@@ -265,11 +446,43 @@
       }
       dragStartCoord = null;
       dragCurrentCoord = null;
+    } else if (input.type === "down") {
+      input = { type: "none" };
+      dragStartCoord = null;
+      dragCurrentCoord = null;
+      if (event.button === MouseButton.Left) {
+        // select the closest decoration within an area
+        selectedArea = null;
+        selectedDecorations = [];
+        const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+        const nearestDecoration = levelData.objects.decorations
+          .sort(
+            (a, b) =>
+              new Cartesian(a.x, a.y).distance(coord) - new Cartesian(b.x, b.y).distance(coord),
+          )
+          .at(0);
+        if (!nearestDecoration) {
+          return;
+        }
+        const center = new Cartesian(nearestDecoration.x, nearestDecoration.y);
+        if (center.distance(coord) > Math.max(1, 1 * nearestDecoration.scale)) {
+          return;
+        }
+        selectedArea = {
+          center,
+          width: Math.max(1, 2 * nearestDecoration.scale),
+          height: Math.max(1, 2 * nearestDecoration.scale),
+          rotation: 0,
+          scale: 1,
+        };
+        selectedDecorations = [nearestDecoration];
+      }
     }
   }
 
   function handleMove(event: GameMouseMoveEvent) {
     if (input.type === "dragging") {
+      const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
       if (input.button === MouseButton.Middle) {
         const end = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
         const start = renderer.canvasCoordToWorldCoord(
@@ -280,14 +493,113 @@
         const delta = start.subtract(end);
 
         camera?.translate(GLM.vec3.fromValues(-delta.x, delta.y, 0));
-      } else if (input.button === MouseButton.Left || input.button === MouseButton.Right) {
-        dragCurrentCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
+      } else if (input.button === MouseButton.Left) {
+        if (selectedTexture) {
+          dragCurrentCoord = coord.round();
+        } else {
+          dragCurrentCoord = coord;
+        }
+        if (selectedArea) {
+          // move selected area and the objects within if the mouse is in the selected area
+          if (dragCurrentCoord.x + selectedArea.width / 2 > GRID_WIDTH) {
+            dragCurrentCoord.x = GRID_WIDTH - selectedArea.width / 2;
+          }
+          if (dragCurrentCoord.x - selectedArea.width / 2 < 0) {
+            dragCurrentCoord.x = 0 + selectedArea.width / 2;
+          }
+          if (dragCurrentCoord.y + selectedArea.height / 2 > GRID_HEIGHT) {
+            dragCurrentCoord.y = GRID_HEIGHT - selectedArea.height / 2;
+          }
+          if (dragCurrentCoord.y - selectedArea.height / 2 < 0) {
+            dragCurrentCoord.y = 0 + selectedArea.height / 2;
+          }
+          const deltaX = dragCurrentCoord.x - selectedArea.center.x;
+          const deltaY = dragCurrentCoord.y - selectedArea.center.y;
+          selectedArea.center = new Cartesian(dragCurrentCoord.x, dragCurrentCoord.y);
+          for (const selected of selectedDecorations) {
+            selected.x += deltaX;
+            selected.y += deltaY;
+          }
+        }
+      } else if (input.button === MouseButton.Right) {
+        dragCurrentCoord = coord.round();
+      }
+    } else if (input.type === "down") {
+      input = { type: "dragging", button: input.button };
+      if (input.button === MouseButton.Left) {
+        if (selectedArea && dragStartCoord) {
+          const minX = selectedArea.center.x - selectedArea.width / 2;
+          const maxX = selectedArea.center.x + selectedArea.width / 2;
+          const minY = selectedArea.center.y - selectedArea.height / 2;
+          const maxY = selectedArea.center.y + selectedArea.height / 2;
+          if (
+            dragStartCoord.x >= minX &&
+            dragStartCoord.x <= maxX &&
+            dragStartCoord.y >= minY &&
+            dragStartCoord.y <= maxY
+          ) {
+            return;
+          }
+        }
+        selectedArea = null;
+        selectedDecorations = [];
+      } else if (input.button === MouseButton.Right) {
+        selectedArea = null;
+        selectedDecorations = [];
       }
     }
   }
 
   function handleScroll(event: GameMouseScrollEvent) {
     camera!.zoom = Math.max(1, camera!.zoom + event.delta / 25);
+  }
+
+  function handleKeyPress(event: GameKeyEvent) {
+    if (event.ctrl) {
+      switch (event.key) {
+        case Key.C:
+          // copy selection
+          copiedDecorations = [...selectedDecorations];
+          break;
+        case Key.V:
+          // paste selection
+          if (copiedDecorations.length > 0) {
+            selectedDecorations = [];
+
+            for (const decoration of copiedDecorations) {
+              const decorationCopy = { ...decoration };
+              decorationCopy.x += 1;
+              decorationCopy.y -= 1;
+              addDecoration(decorationCopy);
+              selectedDecorations.push(decorationCopy);
+            }
+
+            copiedDecorations = [...selectedDecorations];
+
+            selectDecorations(selectedDecorations);
+          }
+
+          break;
+      }
+    } else {
+      switch (event.key) {
+        case Key.Backspace:
+        case Key.Delete:
+          // delete all selected decorations and clear selected area
+          for (const decoration of selectedDecorations) {
+            removeDecoration(decoration);
+          }
+          selectedArea = null;
+          selectedDecorations = [];
+          break;
+        case Key.Escape:
+          selectedArea = null;
+          selectedDecorations = [];
+          selectedTexture = null;
+          selectedDecoration = null;
+          break;
+      }
+    }
   }
 
   async function handleLoadTexture(texture: APICellTexture) {
@@ -300,6 +612,110 @@
 
       assert(false, "failed to load texture");
     }
+  }
+
+  async function handleLoadDecoration(decoration: APIDecoration) {
+    if (levelData.decorations.includes(decoration.key)) {
+      return;
+    }
+
+    const uri = getMediaUrl(decoration.mediaId);
+    const modelId = await renderer.createStaticGLBElement(uri); // TODO: use static model
+    decorationModelLookup[decoration.key] = modelId;
+    levelData.decorations.push(decoration.key);
+    decorationsByKey[decoration.key] = [];
+  }
+
+  function addDecoration(d: APILevelDecorationData) {
+    levelData.objects.decorations.push(d);
+    (decorationsByKey[levelData.decorations[d.index]] ??= []).push(d);
+  }
+
+  function removeDecoration(d: APILevelDecorationData) {
+    const objects = levelData.objects.decorations;
+    const i = objects.findIndex((o) => o === d);
+    assert(i !== -1, "selected decoration not found in level data");
+    objects.splice(i, 1);
+
+    const lookup = decorationsByKey[levelData.decorations[d.index]];
+    const j = lookup.indexOf(d);
+    if (j !== -1) lookup.splice(j, 1);
+  }
+
+  function selectDecorations(decorationsToSelect: APILevelDecorationData[] = []) {
+    let minX: number, maxX: number, minY: number, maxY: number;
+    if (dragCurrentCoord && dragStartCoord) {
+      minY = Math.min(dragStartCoord!.y, dragCurrentCoord.y);
+      maxY = Math.max(dragStartCoord!.y, dragCurrentCoord.y);
+      minX = Math.min(dragStartCoord!.x, dragCurrentCoord.x);
+      maxX = Math.max(dragStartCoord!.x, dragCurrentCoord.x);
+      if (decorationsToSelect.length === 0) {
+        decorationsToSelect = levelData.objects.decorations.filter(
+          (decoration) =>
+            decoration.x >= minX &&
+            decoration.x <= maxX &&
+            decoration.y >= minY &&
+            decoration.y <= maxY,
+        );
+      }
+    }
+
+    if (decorationsToSelect.length > 0) {
+      const decorationsByX = decorationsToSelect.toSorted((a, b) => a.x - b.x);
+      const decorationsByY = decorationsToSelect.toSorted((a, b) => a.y - b.y);
+      minX = decorationsByX[0].x - 1 * decorationsByX[0].scale;
+      maxX = decorationsByX.at(-1)!.x + 1 * decorationsByX.at(-1)!.scale;
+      minY = decorationsByY[0].y - 1 * decorationsByY[0].scale;
+      maxY = decorationsByY.at(-1)!.y + 1 * decorationsByY.at(-1)!.scale;
+      selectedArea = {
+        center: new Cartesian((minX + maxX) / 2, (minY + maxY) / 2),
+        width:
+          decorationsToSelect.length === 1
+            ? Math.max(1, 2 * decorationsToSelect[0].scale)
+            : Math.max(maxX - minX, 2),
+        height:
+          decorationsToSelect.length === 1
+            ? Math.max(1, 2 * decorationsToSelect[0].scale)
+            : Math.max(maxY - minY, 2),
+        rotation: 0,
+        scale: 1,
+      };
+      selectedDecorations = decorationsToSelect;
+    }
+  }
+
+  function drawRectangle(
+    rect: Rectangle,
+    center: Cartesian,
+    width: number,
+    height: number,
+    rotation: number,
+    color: Float32Array,
+  ) {
+    const buffer = rect.allocate(4);
+    let offset = 0;
+
+    const pivot = GLM.mat4.create();
+    GLM.mat4.translate(pivot, pivot, GLM.vec3.fromValues(center.x, center.y, 10));
+    GLM.mat4.rotateZ(pivot, pivot, degToRad(rotation));
+
+    const sides: Array<{ offset: GLM.vec3; scale: GLM.vec3 }> = [
+      { offset: [-width / 2, 0, 0], scale: [0.1, height, 1] }, // left
+      { offset: [0, height / 2, 0], scale: [width, 0.1, 1] }, // top
+      { offset: [width / 2, 0, 0], scale: [0.1, height, 1] }, // right
+      { offset: [0, -height / 2, 0], scale: [width, 0.1, 1] }, // bottom
+    ];
+
+    for (const side of sides) {
+      const model = GLM.mat4.clone(pivot);
+      GLM.mat4.translate(model, model, side.offset);
+      GLM.mat4.scale(model, model, side.scale);
+      buffer.set(model, offset);
+      buffer.set(color, offset + model.length);
+      offset += rect.instanceSize;
+    }
+
+    rect.draw();
   }
 
   async function handleSaveLevel(event: SubmitEvent) {
@@ -329,36 +745,109 @@
 </script>
 
 <main class="relative grid justify-start">
-  <canvas class="absolute inset-0 bg-white" bind:this={canvas}></canvas>
-  <div class="relative z-10 grid justify-start">
-    <button onclick={() => goto(resolve("/dashboard"))}>Exit</button>
-    <form onsubmit={handleSaveLevel}>
-      <input type="text" placeholder="Level Name" bind:value={levelName} />
-      <button>Save</button>
-    </form>
-    <ul class="grid justify-start">
-      {#each data.cellTextures as cellTexture, i (i)}
-        <li class="grid justify-start">
-          <button
-            data-selected={cellTexture.key === selectedTexture}
-            class="data-[selected=true]:text-blue-500 group"
-            onclick={() => {
-              handleLoadTexture(cellTexture).then(() => {
-                selectedTexture = cellTexture.key;
-              });
-            }}
-          >
-            <img
-              alt={cellTexture.displayName}
-              src={getMediaUrl(cellTexture.mediaId)}
-              width={128}
-              height={128}
-              class="texture border-2 border-gray-800 group-data-[selected=true]:border-gray-200"
-            />
-          </button>
-        </li>
-      {/each}
-    </ul>
+  <canvas tabindex="0" class="absolute inset-0 bg-white" bind:this={canvas}></canvas>
+  <div
+    class="relative z-10 grid justify-start gap-4 top-4 left-4 bg-aurora-gray-1400 border-2 border-aurora-gray-1200 p-4 rounded"
+  >
+    <div class="flex flex-col gap-3 max-w-64 md:max-w-full">
+      <StyledButton onclick={() => goto(resolve("/dashboard"))} label="Exit" class="w-min px-4" />
+      <form onsubmit={handleSaveLevel} class="flex gap-2">
+        <StyledInput type="text" placeholder="Level Name" bind:value={levelName} />
+        <StyledButton label="Save" class="w.min px-4" />
+      </form>
+    </div>
+
+    <div class="grid gap-2">
+      <h2 class="text-center">Textures</h2>
+      <ul class="grid grid-cols-3 justify-center">
+        {#each data.cellTextures as cellTexture, i (i)}
+          <li class="grid justify-center">
+            <button
+              data-selected={cellTexture.key === selectedTexture}
+              class="data-[selected=true]:text-blue-500 group"
+              onclick={() => {
+                if (selectedTexture === cellTexture.key) {
+                  selectedTexture = null;
+                } else {
+                  selectedDecoration = null;
+                  selectedArea = null;
+                  selectedDecorations = [];
+                  handleLoadTexture(cellTexture).then(() => {
+                    selectedTexture = cellTexture.key;
+                  });
+                }
+              }}
+            >
+              <img
+                alt={cellTexture.displayName}
+                src={getMediaUrl(cellTexture.mediaId)}
+                width={64}
+                height={64}
+                class="texture border-2 border-gray-800 group-data-[selected=true]:border-gray-200 rounded"
+              />
+            </button>
+          </li>
+        {/each}
+      </ul>
+    </div>
+
+    <div class="grid gap-2">
+      <h2 class="text-center">Decorations</h2>
+      <ul class="grid grid-cols-3">
+        {#each data.decorations as decoration, i (i)}
+          <li class="grid justify-center">
+            <button
+              data-selected={decoration.key === selectedDecoration}
+              class="group"
+              onclick={() => {
+                if (selectedDecoration === decoration.key) {
+                  selectedDecoration = null;
+                } else {
+                  loading = true;
+                  selectedTexture = null;
+                  selectedArea = null;
+                  selectedDecorations = [];
+                  handleLoadDecoration(decoration).then(() => {
+                    loading = false;
+                    selectedDecoration = decoration.key;
+                  });
+                }
+              }}
+            >
+              <span class="sr-only">{decoration.displayName}</span>
+              <ModelViewer
+                autoRotate={true}
+                mediaId={decoration.mediaId}
+                class="size-16 border-2 border-gray-800 group-data-[selected=true]:border-gray-200 rounded"
+              />
+            </button>
+          </li>
+        {/each}
+      </ul>
+    </div>
+
+    {#if selectedArea}
+      <div class="flex gap-2 items-center">
+        <h2 class="flex-1">Rotation</h2>
+        <StyledInput
+          class="flex-2"
+          type="number"
+          placeholder="Rotation (degrees)"
+          bind:value={rotation}
+        />
+      </div>
+
+      <div class="flex gap-2 items-center">
+        <h2 class="flex-1">Scale</h2>
+        <StyledInput
+          class="flex-2"
+          type="number"
+          placeholder="Scale"
+          bind:value={scale}
+          step={0.1}
+        />
+      </div>
+    {/if}
   </div>
 </main>
 
