@@ -9,7 +9,7 @@
 
   let { data }: PageProps = $props();
 
-  $effect(() => console.log(data.friends))
+  $effect(() => console.log(data.friends));
 
   let friends = $derived(data.friends?.filter((f) => f.confirmed) ?? []);
   let pendingInvites = $derived(
