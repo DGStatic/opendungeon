@@ -106,6 +106,14 @@ export type APICharacter = {
   updatedAt: number;
 };
 
+export type APIFriend = {
+  initiatorID: string;
+  targetID: string;
+  confirmed: boolean;
+  createdAt: number;
+  profile: APIProfile;
+};
+
 export function getMediaUrl(mediaId: string): string {
   const url = new URL(BASE_URL.href);
   url.pathname = "/api/media/" + mediaId + "/content";

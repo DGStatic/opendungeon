@@ -8,9 +8,11 @@
   import StyledCard from "$lib/components/StyledCard.svelte";
   import type { LayoutProps } from "./$types";
   import { getInitials } from "$lib/utils";
+  import Icon from "@iconify/svelte";
 
   let { data, children }: LayoutProps = $props();
   let isProfileMenuOpen = $state(false);
+  let isNotificationMenuOpen = $state(false);
 
   async function handleSignOut() {
     const res = await callAPI(fetch, "POST", "/auth/sign-out");
@@ -27,23 +29,44 @@
 
 {#if data.isSignedIn && !!data.profile}
   <div class="fixed top-2 right-2 z-20 lg:right-6">
-    <Popover open={isProfileMenuOpen}>
+    <Popover open={isProfileMenuOpen || isNotificationMenuOpen}>
       {#snippet children(popover)}
-        <button
-          {...popover.trigger}
-          class="grid bg-aurora-gray-1400/75 rounded-full w-12 h-12 text-center items-center cursor-pointer border-2 border-aurora-gray-1000 duration-300 hover:border-aurora-gray-600"
-        >
-          <Avatar src={!data.profile.avatarId ? "" : getMediaUrl(data.profile.avatarId)}>
-            {#snippet children(avatar)}
-              <img {...avatar.image} alt="Avatar" class="w-full-h-full rounded-full" />
-              <span {...avatar.fallback} class="text-2xl -mt-1">
-                {getInitials(data.profile.username)}
-              </span>
-            {/snippet}
-          </Avatar>
-        </button>
+        <div class="flex flex-row gap-4 items-center">
+          <button
+            {...popover.trigger}
+            onclick={(e) => {
+              popover.trigger.onclick(e);
+              isNotificationMenuOpen = !isNotificationMenuOpen
+              isProfileMenuOpen = false
+            }}
+            class="grid rounded-full size-8 text-center items-center cursor-pointer border-aurora-gray-1000 duration-300 hover:border-aurora-gray-600"
+          >
+            <Icon icon="mdi:bell-outline" class="size-full" />
+            <!-- Red indicator of notification -->
+          </button>
+          <button
+            {...popover.trigger}
+            onclick={(e) => {
+              popover.trigger.onclick(e);
+              isProfileMenuOpen = !isProfileMenuOpen
+              isNotificationMenuOpen = false
+            }}
+            class="grid bg-aurora-gray-1400/75 rounded-full w-12 h-12 text-center items-center cursor-pointer border-2 border-aurora-gray-1000 duration-300 hover:border-aurora-gray-600"
+          >
+            <Avatar src={!data.profile.avatarId ? "" : getMediaUrl(data.profile.avatarId)}>
+              {#snippet children(avatar)}
+                <img {...avatar.image} alt="Avatar" class="w-full-h-full rounded-full" />
+                <span {...avatar.fallback} class="text-2xl -mt-1">
+                  {getInitials(data.profile.username)}
+                </span>
+              {/snippet}
+            </Avatar>
+          </button>
+        </div>
+
         <StyledCard {...popover.content} class="text-white p-4 min-w-[200px]">
           <div class="grid gap-2">
+          {#if isProfileMenuOpen}
             <p>{data.profile.username}</p>
             <StyledSeparator />
             <a
@@ -51,7 +74,15 @@
               class="text-aurora-gray-700 duration-300 hover:text-aurora-gray-500">Edit Profile</a
             >
             <StyledSeparator />
+            <a
+              href={resolve("/me/friends")}
+              class="text-aurora-gray-700 duration-300 hover:text-aurora-gray-500">Friends</a
+            >
+            <StyledSeparator />
             <button onclick={handleSignOut} class="text-danger cursor-pointer"> Sign Out </button>
+            {:else}
+              notifications
+            {/if}
           </div>
         </StyledCard>
       {/snippet}
