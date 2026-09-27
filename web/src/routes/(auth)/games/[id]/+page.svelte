@@ -55,6 +55,11 @@
       return { ...prev, [curr.id]: curr };
     }, {}),
   );
+  let friends = $derived(
+    data.friends?.filter(
+      (f) => f.confirmed && !Object.values(profiles).find((profile) => profile.id === f.profile.id),
+    ) ?? [],
+  );
   let messages: GameMessage[] = $state([]);
   let loading = $state(true);
   let onlinePlayers: Record<string, string> = $state({});
@@ -384,16 +389,10 @@
     socket.send(JSON.stringify(loadLevelMessage));
   }
 
-  async function handleInvitePlayer(event: SubmitEvent) {
-    event.preventDefault();
-
-    const form = new FormData(event.currentTarget as HTMLFormElement);
-    const invitee = form.get("invitee");
-    if (!invitee) {
-      return;
-    }
+  async function handleAddPlayer(index: number) {
+    const invitee = friends[index].profile.id;
     const formData = new FormData();
-    formData.append("userId", invitee);
+    formData.append("userID", invitee);
     formData.append("permissionLevel", "player");
     const inviteRes = await callAPI(fetch, "POST", "/games/" + data.game.id + "/players", {
       body: formData,
@@ -631,9 +630,10 @@
       {profiles}
       {messages}
       characters={data.characters}
+      {friends}
       {handleLoadLevel}
       {handleSendChatMessage}
-      {handleInvitePlayer}
+      {handleAddPlayer}
       {handleLeaveGame}
       {handleSendLoadCharacter}
     />

@@ -1,10 +1,17 @@
 <script lang="ts">
-  import { getMediaUrl, type APICharacter, type APILevel, type APIProfile } from "$lib/api";
+  import {
+    getMediaUrl,
+    type APICharacter,
+    type APIFriend,
+    type APILevel,
+    type APIProfile,
+  } from "$lib/api";
   import Icon from "@iconify/svelte";
   import type { GameMessage } from "$lib/game";
   import { Avatar } from "melt/components";
   import { getInitials } from "$lib/utils";
   import { GameMenuTab } from "$lib/game";
+  import ProfileList from "./ProfileList.svelte";
 
   type Props = {
     gameName: string;
@@ -14,8 +21,9 @@
     onlinePlayers: Record<string, string>;
     profiles: Record<string, APIProfile>;
     characters: APICharacter[];
+    friends: APIFriend[];
     handleSendChatMessage: (event: SubmitEvent) => void;
-    handleInvitePlayer: (event: SubmitEvent) => void;
+    handleAddPlayer: (index: number) => void;
     handleLoadLevel: (levelId: string) => void;
     handleLeaveGame: () => void;
     handleSendLoadCharacter: (mediaId: string) => void;
@@ -29,15 +37,15 @@
     onlinePlayers,
     profiles,
     characters,
+    friends,
     handleSendChatMessage,
-    handleInvitePlayer,
+    handleAddPlayer,
     handleLoadLevel,
     handleLeaveGame,
     handleSendLoadCharacter,
   }: Props = $props();
 
   let selectedTab = $state(GameMenuTab.Chat);
-  let invitee = $state<string>("");
   let message = $state<string>("");
   let chatContainer = $state<HTMLUListElement>();
   let messageInput = $state<HTMLInputElement>();
@@ -133,54 +141,53 @@
       </form>
     {/if}
     {#if selectedTab === GameMenuTab.Players}
-      {#if isGameMaster}
-        <form
-          onsubmit={handleInvitePlayer}
-          class="shrink-0 flex flex-col gap-4 py-3 px-2 border-b-2 border-aurora-gray-400 bg-aurora-gray-1200"
+      <div class="flex flex-col gap-4 py-4">
+        <h3 class="text-2xl self-center">Players</h3>
+        <div
+          class="p-4 flex flex-col gap-4 overflow-y-auto border-b border-aurora-gray-1000 max-h-64"
         >
-          <input
-            type="text"
-            placeholder="Player ID"
-            name="invitee"
-            bind:value={invitee}
-            autocomplete="off"
-            maxlength={36}
-            class="bg-aurora-gray-1300 py-2 px-4 rounded border border-aurora-gray-600 focus:border-aurora-gray-400 backdrop-blur-xs focus:outline-hidden duration-100"
-          />
-          <button
-            class="grid justify-items-center cursor-pointer rounded-xl py-1.5 px-4 text-center border-2 border-aurora-gray-600 bg-aurora-gray-1300 hover:bg-aurora-gray-1200 active:bg-aurora-gray-1100 duration-100 w-min relative self-start"
-            >Invite</button
-          >
-        </form>
-      {/if}
-
-      <div class="p-4 flex flex-col gap-4 overflow-y-auto">
-        <ul class="flex flex-col gap-4 overflow-y-auto">
-          {#each Object.values(profiles) as profile, i (i)}
-            <li class="text-white flex flex-row items-center bg-aurora-gray-1200 p-2 rounded-md">
-              <div class="flex flex-row gap-2 items-center">
-                <div
-                  class="w-8 h-8 bg-aurora-gray-1400 rounded-full text-center items-center border-2 border-aurora-gray-600"
-                >
-                  <Avatar src={!profile.avatarId ? "" : getMediaUrl(profile.avatarId)}>
-                    {#snippet children(avatar)}
-                      <img {...avatar.image} alt="Avatar" class="w-full-h-full rounded-full" />
-                      <span {...avatar.fallback} class="text-lg -mt-1">
-                        {getInitials(profile.username)}
-                      </span>
-                    {/snippet}
-                  </Avatar>
+          <ul class="flex flex-col gap-4 overflow-y-auto">
+            {#each Object.values(profiles) as profile, i (i)}
+              <li class="text-white flex flex-row items-center bg-aurora-gray-1200 p-2 rounded-md">
+                <div class="flex flex-row gap-2 items-center">
+                  <div
+                    class="w-8 h-8 bg-aurora-gray-1400 rounded-full text-center items-center border-2 border-aurora-gray-600"
+                  >
+                    <Avatar src={!profile.avatarId ? "" : getMediaUrl(profile.avatarId)}>
+                      {#snippet children(avatar)}
+                        <img {...avatar.image} alt="Avatar" class="w-full-h-full rounded-full" />
+                        <span {...avatar.fallback} class="text-lg -mt-1">
+                          {getInitials(profile.username)}
+                        </span>
+                      {/snippet}
+                    </Avatar>
+                  </div>
+                  <h3 class="text-lg">{profile.username}</h3>
+                  {#if onlinePlayers[profile.id]}
+                    <span class="text-sm text-green-500">online</span>
+                  {:else}
+                    <span class="text-sm text-aurora-gray-700">offline</span>
+                  {/if}
                 </div>
-                <h3 class="text-lg">{profile.username}</h3>
-                {#if onlinePlayers[profile.id]}
-                  <span class="text-sm text-green-500">online</span>
-                {:else}
-                  <span class="text-sm text-aurora-gray-700">offline</span>
-                {/if}
-              </div>
-            </li>
-          {/each}
-        </ul>
+              </li>
+            {/each}
+          </ul>
+        </div>
+        {#if isGameMaster}
+          <ProfileList
+            profiles={friends.map((friend) => friend.profile)}
+            emptyText="No friends to add..."
+            actions={[
+              {
+                icon: "akar-icons:person-add",
+                color: "text-success",
+                onclick: handleAddPlayer,
+              },
+            ]}
+            label="Add Players"
+            class="text-center"
+          />
+        {/if}
       </div>
     {/if}
     {#if isGameMaster && selectedTab === GameMenuTab.Levels}

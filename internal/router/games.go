@@ -83,7 +83,7 @@ func (app *App) createGamePlayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userIdStr := r.PostFormValue("userId")
+	userIdStr := r.PostFormValue("userID")
 	userId, err := uuid.Parse(userIdStr)
 	if err != nil {
 		http.Error(w, "Invalid user ID.", http.StatusBadRequest)

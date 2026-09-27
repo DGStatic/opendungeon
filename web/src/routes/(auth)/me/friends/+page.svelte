@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
   import { callAPI, CONFLICT, NOT_FOUND, type APIFriend } from "$lib/api";
-  import FriendsList from "$lib/components/FriendsList.svelte";
+  import ProfileList from "$lib/components/ProfileList.svelte";
   import StyledButton from "$lib/components/StyledButton.svelte";
   import StyledCard from "$lib/components/StyledCard.svelte";
   import StyledInput from "$lib/components/StyledInput.svelte";
@@ -193,25 +193,25 @@
     </form>
     <StyledSeparator />
     <div class="grid lg:grid-cols-3 text-center gap-4">
-      <FriendsList
+      <ProfileList
         label="Friends"
-        {friends}
+        profiles={friends.map((friend) => friend.profile)}
         emptyText="You have no friends..."
         actions={[
           { icon: "clarity:remove-solid", color: "text-danger", onclick: handleDeleteFriend },
         ]}
       />
-      <FriendsList
+      <ProfileList
         label="Pending"
-        friends={pendingInvites}
+        profiles={pendingInvites.map((invite) => invite.profile)}
         emptyText="You have not invited anyone..."
         actions={[
           { icon: "clarity:remove-solid", color: "text-danger", onclick: handleCancelPending },
         ]}
       />
-      <FriendsList
+      <ProfileList
         label="Incoming"
-        friends={incomingRequests}
+        profiles={incomingRequests.map((request) => request.profile)}
         emptyText="You have no requests..."
         actions={[
           {

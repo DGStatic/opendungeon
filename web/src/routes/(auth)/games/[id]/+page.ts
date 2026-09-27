@@ -48,7 +48,7 @@ export const load: PageLoad = async ({ fetch, params, parent }) => {
 
   const characters: APICharacter[] = await charactersRes.data.json();
 
-  const { profile } = await parent();
+  const { profile, friends } = await parent();
   let levels: APILevel[] = [];
   if (profile && profile.id === game.gameMasterId) {
     const res = await callAPI(fetch, "GET", "/levels");
@@ -66,5 +66,6 @@ export const load: PageLoad = async ({ fetch, params, parent }) => {
     game,
     levels,
     characters,
+    friends,
   };
 };

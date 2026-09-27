@@ -29,6 +29,11 @@
       .filter((level) => level.name.toLowerCase().includes(searchText.trim().toLowerCase()))
       .sort((a, b) => b.updatedAt - a.updatedAt),
   );
+  let friends = $derived(
+    data.friends?.filter(
+      (f) => f.confirmed && !activeGame?.profiles.find((profile) => profile.id === f.profile.id),
+    ) ?? [],
+  );
   let pressedPlay = $state(false);
   let activeGame: APIGame | null = $state(null);
   let activeLevel: APILevelMetaData | null = $state(null);
@@ -145,13 +150,13 @@
     activeLevel = null;
   }
 
-  async function handleInvitePlayer(event: SubmitEvent): Promise<boolean> {
-    event.preventDefault();
+  async function handleAddPlayer(index: number): Promise<boolean> {
+    assert(activeGame !== null, "Tried to add a player with no game selected.");
 
-    assert(activeGame !== null, "Tried to invite a player with no game selected.");
-
-    const body = new FormData(event.currentTarget as HTMLFormElement);
-    const invitee = body.get("userId")!;
+    const body = new FormData();
+    const invitee = friends[index].profile.id;
+    console.log(invitee);
+    body.append("userID", invitee);
     body.append("permissionLevel", "player");
     const inviteRes = await callAPI(fetch, "POST", "/games/" + activeGame!.id + "/players", {
       body,
@@ -159,7 +164,7 @@
     if (!inviteRes.ok) {
       addToast({
         data: {
-          title: "Failed to Invite Player",
+          title: "Failed to Add Player",
           description: inviteRes.error.message,
           level: "danger",
         },
@@ -266,11 +271,12 @@
                 profile={data.profile!}
                 {activeGame}
                 {activeLevel}
+                {friends}
                 {creatingGame}
                 {handleCreateGame}
                 {handleDeleteGame}
                 {handleDeleteLevel}
-                {handleInvitePlayer}
+                {handleAddPlayer}
               />
             {/if}
             <div class="flex justify-between px-8 gap-4">
@@ -312,11 +318,12 @@
                         profile={data.profile!}
                         {activeGame}
                         {activeLevel}
+                        {friends}
                         {creatingGame}
                         {handleCreateGame}
                         {handleDeleteGame}
                         {handleDeleteLevel}
-                        {handleInvitePlayer}
+                        {handleAddPlayer}
                       />
                     {:else}
                       <button
@@ -367,11 +374,12 @@
                         profile={data.profile!}
                         {activeGame}
                         {activeLevel}
+                        {friends}
                         {creatingGame}
                         {handleCreateGame}
                         {handleDeleteGame}
                         {handleDeleteLevel}
-                        {handleInvitePlayer}
+                        {handleAddPlayer}
                       />
                     {:else}
                       <button
@@ -437,11 +445,12 @@
             profile={data.profile!}
             {activeGame}
             {activeLevel}
+            {friends}
             {creatingGame}
             {handleCreateGame}
             {handleDeleteGame}
             {handleDeleteLevel}
-            {handleInvitePlayer}
+            {handleAddPlayer}
           />
         {/if}
       </div>
