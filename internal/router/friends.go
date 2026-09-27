@@ -26,13 +26,13 @@ func (app *App) createFriend(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	err = handlers.CreateFriend(r.Context(), conn, userId, username)
+	friend, err := handlers.CreateFriend(r.Context(), conn, userId, username)
 	if err != nil {
 		writeHandlerErr(w, err)
 		return
 	}
 
-	_ = writeJSON(w, http.StatusOK, "Created")
+	_ = writeJSON(w, http.StatusOK, friend)
 }
 
 func (app *App) confirmFriend(w http.ResponseWriter, r *http.Request) {

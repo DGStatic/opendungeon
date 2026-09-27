@@ -18,31 +18,53 @@ func CreateFriend(
 	conn *sql.Conn,
 	userID uuid.UUID,
 	targetUsername string,
-) error {
+) (models.Friend, error) {
 	repo := repository.New(conn)
-	rows, err := repo.CreateFriend(ctx, repository.CreateFriendParams{
+	friend, err := repo.CreateFriend(ctx, repository.CreateFriendParams{
 		InitiatorUuid:  userID,
 		TargetUsername: targetUsername,
 	})
 	if err != nil {
 		sqlErr := new(sqlite.Error)
-		if errors.As(err, &sqlErr) {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.Friend{}, ErrNotFound
+		} else if errors.As(err, &sqlErr) {
 			if sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT_FOREIGNKEY {
-				return ErrForeignKeyViolation
+				return models.Friend{}, ErrForeignKeyViolation
 			} else if sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT_CHECK {
-				return ErrCheckViolation
+				return models.Friend{}, ErrCheckViolation
+			} else if sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE {
+				return models.Friend{}, ErrUniqueViolation
 			}
 		}
 
 		slog.Error("failed to create friend", "error", err)
-		return ErrDatabaseFailure
+		return models.Friend{}, ErrDatabaseFailure
 	}
 
-	if rows == 0 {
-		return ErrNotFound
+	row, err := repo.GetProfile(ctx, friend.TargetUuid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.Friend{}, ErrNotFound
+		}
+
+		slog.Error("failed to create friend", "error", err)
+		return models.Friend{}, ErrDatabaseFailure
 	}
 
-	return nil
+	var avatar *uuid.UUID
+	if row.AvatarUuid != nil {
+		avatarId := uuid.MustParse(string(row.AvatarUuid))
+		avatar = &avatarId
+	}
+
+	return models.RepoToFriend(
+		userID,
+		friend.TargetUuid,
+		false,
+		friend.CreatedAt,
+		models.RepoToProfile(row.Profile, friend.TargetUuid, avatar),
+	), nil
 }
 
 func ConfirmFriend(
@@ -52,11 +74,14 @@ func ConfirmFriend(
 	targetID uuid.UUID,
 ) error {
 	repo := repository.New(conn)
-	err := repo.ConfirmFriend(ctx, repository.ConfirmFriendParams{
+	_, err := repo.ConfirmFriend(ctx, repository.ConfirmFriendParams{
 		UserUuid:   userID,
 		TargetUuid: targetID,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
 		sqlErr := new(sqlite.Error)
 		if errors.As(err, &sqlErr) {
 			if sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT_FOREIGNKEY {
@@ -78,11 +103,14 @@ func DeleteFriend(
 	targetID uuid.UUID,
 ) error {
 	repo := repository.New(conn)
-	err := repo.DeleteFriend(ctx, repository.DeleteFriendParams{
+	_, err := repo.DeleteFriend(ctx, repository.DeleteFriendParams{
 		UserUuid:   userID,
 		TargetUuid: targetID,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
 		sqlErr := new(sqlite.Error)
 		if errors.As(err, &sqlErr) {
 			if sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT_FOREIGNKEY {

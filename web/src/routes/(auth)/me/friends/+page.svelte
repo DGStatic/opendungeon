@@ -1,15 +1,16 @@
 <script lang="ts">
-  import { callAPI } from "$lib/api";
+  import { invalidateAll } from "$app/navigation";
+  import { callAPI, CONFLICT, NOT_FOUND, type APIFriend } from "$lib/api";
+  import FriendsList from "$lib/components/FriendsList.svelte";
   import StyledButton from "$lib/components/StyledButton.svelte";
   import StyledCard from "$lib/components/StyledCard.svelte";
   import StyledInput from "$lib/components/StyledInput.svelte";
   import StyledMain from "$lib/components/StyledMain.svelte";
+  import StyledSeparator from "$lib/components/StyledSeparator.svelte";
   import { addToast } from "$lib/components/Toaster.svelte";
   import type { PageProps } from "./$types";
 
   let { data }: PageProps = $props();
-
-  $effect(() => console.log(data.friends));
 
   let friends = $derived(data.friends?.filter((f) => f.confirmed) ?? []);
   let pendingInvites = $derived(
@@ -28,13 +29,151 @@
 
     const res = await callAPI(fetch, "POST", "/friends", { body });
     if (!res.ok) {
+      if (res.error.cause === CONFLICT) {
+        const existingIncomingRequestIndex = incomingRequests.findIndex(
+          (invite) => invite.profile.username === username,
+        );
+        if (existingIncomingRequestIndex !== -1) {
+          handleAcceptIncoming(existingIncomingRequestIndex);
+
+          username = "";
+          return;
+        } else {
+          invalidateAll();
+        }
+      }
       addToast({
         data: { title: "Invite Failed", description: res.error.message, level: "danger" },
       });
       return;
     }
 
+    const friendRequest: APIFriend = await res.data.json();
+
+    const existingFriendIndex = friends.findIndex((friend) => friend.profile.username === username);
+    if (existingFriendIndex !== -1) {
+      const friendsCopy = [...friends];
+      friendsCopy.splice(existingFriendIndex, 1);
+      friends = friendsCopy;
+    }
+
+    const existingPendingIndex = pendingInvites.findIndex(
+      (invite) => invite.profile.username === username,
+    );
+    if (existingPendingIndex !== -1) {
+      const pendingCopy = [...pendingInvites];
+      pendingCopy.splice(existingPendingIndex, 1);
+      pendingInvites = pendingCopy;
+    }
+
+    const existingIncomingRequestIndex = incomingRequests.findIndex(
+      (request) => request.targetID === data.profile?.id && request.profile.username === username,
+    );
+    if (existingIncomingRequestIndex !== -1) {
+      friends = [...friends, incomingRequests[existingIncomingRequestIndex]];
+      const incomingCopy = [...incomingRequests];
+      incomingCopy.splice(existingIncomingRequestIndex, 1);
+      incomingRequests = incomingCopy;
+    } else {
+      pendingInvites = [...pendingInvites, friendRequest];
+    }
+
     username = "";
+  }
+
+  async function handleDeleteFriend(index: number) {
+    const res = await callAPI(fetch, "DELETE", "/friends/" + friends[index].profile.id);
+    if (!res.ok) {
+      if (res.error.cause === NOT_FOUND) {
+        const friendsCopy = [...friends];
+        friendsCopy.splice(index, 1);
+        friends = friendsCopy;
+        return;
+      }
+      addToast({
+        data: {
+          title: "Failed to Remove Friend",
+          description: res.error.message,
+          level: "danger",
+        },
+      });
+      return;
+    }
+
+    const friendsCopy = [...friends];
+    friendsCopy.splice(index, 1);
+    friends = friendsCopy;
+  }
+
+  async function handleCancelPending(index: number) {
+    const res = await callAPI(fetch, "DELETE", "/friends/" + pendingInvites[index].profile.id);
+    if (!res.ok) {
+      if (res.error.cause === NOT_FOUND) {
+        const incomingCopy = [...incomingRequests];
+        incomingCopy.splice(index, 1);
+        incomingRequests = incomingCopy;
+        return;
+      }
+      addToast({
+        data: { title: "Failed to Cancel Invite", description: res.error.message, level: "danger" },
+      });
+      return;
+    }
+
+    const pendingCopy = [...pendingInvites];
+    pendingCopy.splice(index, 1);
+    pendingInvites = pendingCopy;
+  }
+
+  async function handleRejectIncoming(index: number) {
+    const res = await callAPI(fetch, "DELETE", "/friends/" + incomingRequests[index].profile.id);
+    if (!res.ok) {
+      if (res.error.cause === NOT_FOUND) {
+        const incomingCopy = [...incomingRequests];
+        incomingCopy.splice(index, 1);
+        incomingRequests = incomingCopy;
+        return;
+      }
+      addToast({
+        data: {
+          title: "Failed to Reject Friend Request",
+          description: res.error.message,
+          level: "danger",
+        },
+      });
+      return;
+    }
+
+    const incomingCopy = [...incomingRequests];
+    incomingCopy.splice(index, 1);
+    incomingRequests = incomingCopy;
+  }
+
+  async function handleAcceptIncoming(index: number) {
+    const res = await callAPI(fetch, "PUT", "/friends/" + incomingRequests[index].profile.id);
+    if (!res.ok) {
+      if (res.error.cause === NOT_FOUND) {
+        const incomingCopy = [...incomingRequests];
+        incomingCopy.splice(index, 1);
+        incomingRequests = incomingCopy;
+      }
+      addToast({
+        data: {
+          title: "Failed to Accept Friend Request",
+          description: res.error.message,
+          level: "danger",
+        },
+      });
+      return;
+    }
+
+    const friendsCopy = [...friends];
+    friendsCopy.push(incomingRequests[index]);
+    friends = friendsCopy;
+
+    const incomingCopy = [...incomingRequests];
+    incomingCopy.splice(index, 1);
+    incomingRequests = incomingCopy;
   }
 </script>
 
@@ -43,39 +182,46 @@
 </svelte:head>
 
 <StyledMain>
-  <StyledCard class="max-w-96 w-full px-4 py-6 grid gap-6 md:px-8">
-    <form onsubmit={handleInviteFriend} class="flex flex-col gap-2">
+  <StyledCard class="px-4 py-6 grid gap-6 md:px-8 lg:w-5xl xl:w-6xl">
+    <form onsubmit={handleInviteFriend} autocomplete="off" class="flex flex-col gap-2">
       <h2>Invite Friend</h2>
-      <div class="flex flex-row gap-2">
-        <StyledInput bind:value={username} placeholder="Username" />
+      <div class="flex flex-row gap-2 max-w-sm">
+        <input type="text" name="hidden" class="hidden" />
+        <StyledInput bind:value={username} placeholder="Username" type="text" />
         <StyledButton label="Invite" class="px-2" />
       </div>
     </form>
-    <div class="grid lg:grid-cols-3 text-center">
-      <div>
-        <h2>Friends</h2>
-        <ul>
-          {#each friends as friend, i (i)}
-            <li>{friend.profile.username}</li>
-          {/each}
-        </ul>
-      </div>
-      <div>
-        <h2>Pending</h2>
-        <ul>
-          {#each pendingInvites as invite, i (i)}
-            <li>{invite.profile.username}</li>
-          {/each}
-        </ul>
-      </div>
-      <div>
-        <h2>Incoming</h2>
-        <ul>
-          {#each incomingRequests as request, i (i)}
-            <li>{request.profile.username}</li>
-          {/each}
-        </ul>
-      </div>
+    <StyledSeparator />
+    <div class="grid lg:grid-cols-3 text-center gap-4">
+      <FriendsList
+        label="Friends"
+        {friends}
+        emptyText="You have no friends..."
+        actions={[
+          { icon: "clarity:remove-solid", color: "text-danger", onclick: handleDeleteFriend },
+        ]}
+      />
+      <FriendsList
+        label="Pending"
+        friends={pendingInvites}
+        emptyText="You have not invited anyone..."
+        actions={[
+          { icon: "clarity:remove-solid", color: "text-danger", onclick: handleCancelPending },
+        ]}
+      />
+      <FriendsList
+        label="Incoming"
+        friends={incomingRequests}
+        emptyText="You have no requests..."
+        actions={[
+          {
+            icon: "akar-icons:circle-check-fill",
+            color: "text-success",
+            onclick: handleAcceptIncoming,
+          },
+          { icon: "clarity:remove-solid", color: "text-danger", onclick: handleRejectIncoming },
+        ]}
+      />
     </div>
   </StyledCard>
 </StyledMain>

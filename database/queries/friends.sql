@@ -1,4 +1,4 @@
--- name: CreateFriend :execrows
+-- name: CreateFriend :one
 insert into friends (initiator_id, target_id)
 select i.user_id, t.user_id
 from users i
@@ -9,10 +9,12 @@ join profiles p
 join users t
   on t.user_id = p.user_id
 where i.uuid = sqlc.arg(initiator_uuid)
-on conflict (min(initiator_id, target_id), max(initiator_id, target_id))
-do update set confirmed = confirmed or friends.initiator_id = excluded.target_id;
+returning
+  (select u.uuid as target_uuid from users u where u.user_id = target_id),
+  confirmed,
+  created_at;
 
--- name: ConfirmFriend :exec
+-- name: ConfirmFriend :one
 update friends
 set confirmed = true
 where exists (
@@ -23,9 +25,10 @@ where exists (
   where u.uuid = sqlc.arg(user_uuid)
     and u.user_id in (friends.initiator_id, friends.target_id)
     and t.user_id in (friends.initiator_id, friends.target_id)
-);
+)
+returning confirmed;
 
--- name: DeleteFriend :exec
+-- name: DeleteFriend :one
 delete from friends
 where exists (
   select 1
@@ -35,7 +38,8 @@ where exists (
   where u.uuid = sqlc.arg(user_uuid)
     and u.user_id in (friends.initiator_id, friends.target_id)
     and t.user_id in (friends.initiator_id, friends.target_id)
-);
+)
+returning confirmed;
 
 -- name: ListFriends :many
 select f.friend_id,

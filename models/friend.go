@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"uuid"
 
 	"github.com/opendungeon/opendungeon/internal/repository"
@@ -26,7 +25,6 @@ func RepoToFriend(initiatorID, targetID uuid.UUID, confirmed bool, createdAt int
 }
 
 func RepoToFriends(f []repository.ListFriendsRow, userID uuid.UUID) []Friend {
-	fmt.Println(len(f))
 	friends := make([]Friend, 0, len(f))
 	for _, row := range f {
 		id := row.TargetUuid

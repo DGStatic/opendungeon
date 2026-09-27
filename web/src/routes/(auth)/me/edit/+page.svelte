@@ -34,9 +34,7 @@
       return;
     }
 
-    if (!data.profile) {
-      await goto(resolve("/dashboard"), { invalidate: [resolve("/dashboard")] });
-    }
+    await goto(resolve("/dashboard"), { invalidate: [resolve("/dashboard")] });
   }
 </script>
 
