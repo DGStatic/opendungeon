@@ -29,21 +29,19 @@
   <div class="fixed top-2 right-2 z-20 lg:right-6">
     <Popover open={isProfileMenuOpen}>
       {#snippet children(popover)}
-        <div class="flex flex-row gap-4 items-center">
-          <button
-            {...popover.trigger}
-            class="grid bg-aurora-gray-1400/75 rounded-full w-12 h-12 text-center items-center cursor-pointer border-2 border-aurora-gray-1000 duration-300 hover:border-aurora-gray-600"
-          >
-            <Avatar src={!data.profile.avatarId ? "" : getMediaUrl(data.profile.avatarId)}>
-              {#snippet children(avatar)}
-                <img {...avatar.image} alt="Avatar" class="w-full-h-full rounded-full" />
-                <span {...avatar.fallback} class="text-2xl -mt-1">
-                  {getInitials(data.profile.username)}
-                </span>
-              {/snippet}
-            </Avatar>
-          </button>
-        </div>
+        <button
+          {...popover.trigger}
+          class="grid bg-aurora-gray-1400/75 rounded-full w-12 h-12 text-center items-center cursor-pointer border-2 border-aurora-gray-1000 duration-300 hover:border-aurora-gray-600"
+        >
+          <Avatar src={!data.profile.avatarId ? "" : getMediaUrl(data.profile.avatarId)}>
+            {#snippet children(avatar)}
+              <img {...avatar.image} alt="Avatar" class="w-full-h-full rounded-full" />
+              <span {...avatar.fallback} class="text-2xl -mt-1">
+                {getInitials(data.profile.username)}
+              </span>
+            {/snippet}
+          </Avatar>
+        </button>
 
         <StyledCard {...popover.content} class="text-white p-4 min-w-[200px]">
           <div class="grid gap-2">
