@@ -15,10 +15,10 @@
 
   let friends = $derived(data.friends?.filter((f) => f.confirmed) ?? []);
   let pendingInvites = $derived(
-    data.friends?.filter((f) => !f.confirmed && f.initiatorID === data.profile.id) ?? [],
+    data.friends?.filter((f) => !f.confirmed && f.initiatorID === data.profile?.id) ?? [],
   );
   let incomingRequests = $derived(
-    data.friends?.filter((f) => !f.confirmed && f.initiatorID !== data.profile.id) ?? [],
+    data.friends?.filter((f) => !f.confirmed && f.initiatorID !== data.profile?.id) ?? [],
   );
   let username = $state("");
 

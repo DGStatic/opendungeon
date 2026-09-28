@@ -14,7 +14,7 @@
 
   let { data }: PageProps = $props();
 
-  let username = $state("");
+  let username = $derived(data.profile?.username ?? "");
   let file: File | null = $state(null);
   const fileUpload = new FileUpload();
 
