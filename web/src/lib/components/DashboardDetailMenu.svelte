@@ -104,7 +104,7 @@
               onclick: handleAddPlayer,
             },
           ]}
-          class="border border-aurora-gray-1000 rounded items-center"
+          class="border border-aurora-gray-1000 rounded"
         />
       {/if}
       <ProfileList profiles={activeGame.profiles} class="border border-aurora-gray-1000 rounded" />

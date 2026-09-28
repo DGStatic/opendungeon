@@ -47,7 +47,7 @@
     {#if data.profile}
       <a
         href={resolve("/dashboard")}
-        class="text-aurora-gray-700 underline duration-300 hover:text-aurora-gray-500">Exit</a
+        class="text-aurora-gray-700 underline duration-300 hover:text-aurora-gray-500 w-min">Exit</a
       >
       <StyledSeparator />
     {/if}

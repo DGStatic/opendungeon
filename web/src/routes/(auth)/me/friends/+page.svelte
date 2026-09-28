@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { callAPI, CONFLICT, NOT_FOUND, type APIFriend } from "$lib/api";
   import ProfileList from "$lib/components/ProfileList.svelte";
   import StyledButton from "$lib/components/StyledButton.svelte";
@@ -183,6 +184,10 @@
 
 <StyledMain>
   <StyledCard class="px-4 py-6 grid gap-6 md:px-8 lg:w-5xl xl:w-6xl">
+    <a
+      href={resolve("/dashboard")}
+      class="text-aurora-gray-700 underline duration-300 hover:text-aurora-gray-500 w-min">Exit</a
+    >
     <form onsubmit={handleInviteFriend} autocomplete="off" class="flex flex-col gap-2">
       <h2>Invite Friend</h2>
       <div class="flex flex-row gap-2 max-w-sm">
