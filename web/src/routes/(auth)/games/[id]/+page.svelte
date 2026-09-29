@@ -9,7 +9,7 @@
     type Message,
     type PingMessage,
   } from "$lib/messages";
-  import { type GameMessage } from "$lib/game";
+  import { MeasureShape, type GameMessage } from "$lib/game";
   import {
     callAPI,
     getMediaUrl,
@@ -36,13 +36,16 @@
   import { addToast } from "$lib/components/Toaster.svelte";
   import { resolve } from "$app/paths";
   import { goto } from "$app/navigation";
-  import { GameMenuTool } from "$lib/game";
   import GameToolMenu from "$lib/components/GameToolMenu.svelte";
   import Animator from "$lib/renderer/animator";
   import ModelInstance from "$lib/renderer/model/instance";
   import DynamicModel from "$lib/renderer/model/dynamic";
   import type StaticModel from "$lib/renderer/model/static";
   import { MAT4_FLOAT_SIZE } from "$lib/renderer/consts";
+  import { GameTools } from "$lib/game/gameTools.svelte";
+
+  const GRID_WIDTH = 256;
+  const GRID_HEIGHT = 256;
 
   let { data }: PageProps = $props();
 
@@ -65,7 +68,7 @@
   let onlinePlayers: Record<string, string> = $state({});
   let showLeftMenu = $state(true);
   let showRightMenu = $state(true);
-  let selectedTool: GameMenuTool | null = $state(GameMenuTool.Select); // TODO: Implement functional tool type, rather than pure UI state
+  let toolData: GameTools = $state(new GameTools());
   let messageIdHandle = 0;
   let pingIdHandle = 0;
   let pings: Record<number, { point: Cartesian; opacity: number }> = {};
@@ -84,6 +87,8 @@
   let rectId: number;
   const decorationModelLookup: Record<string, number> = {};
   const decorationsByKey: Record<string, APILevelDecorationData[]> = {};
+  let dragStartCoord: Cartesian | null = null;
+  let dragCurrentCoord: Cartesian | null = null;
 
   function getMessageId() {
     const id = messageIdHandle;
@@ -329,6 +334,54 @@
       rect.draw();
     }
 
+    // draw grid lines
+    renderer.useTexture("system.plain");
+    const buffer = rect.allocate(GRID_HEIGHT / 2 + GRID_WIDTH / 2);
+    let offset = 0;
+    for (let row = 0; row < GRID_HEIGHT; row += 2) {
+      const model = GLM.mat4.create();
+      GLM.mat4.translate(model, model, GLM.vec3.fromValues(GRID_WIDTH / 2, row + 0.5, 0.1));
+      GLM.mat4.scale(model, model, GLM.vec3.fromValues(GRID_WIDTH, 0.1, 1));
+      buffer.set(model, offset);
+      buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
+      offset += rect.instanceSize;
+    }
+    for (let col = 0; col < GRID_WIDTH; col += 2) {
+      const model = GLM.mat4.create();
+      GLM.mat4.translate(model, model, GLM.vec3.fromValues(col + 0.5, GRID_HEIGHT / 2, 0.1));
+      GLM.mat4.scale(model, model, GLM.vec3.fromValues(0.1, GRID_HEIGHT, 1));
+      buffer.set(model, offset);
+      buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
+      offset += rect.instanceSize;
+    }
+    rect.draw();
+
+    // draw measure line
+    if (toolData.measure.lineTransform) {
+      const lineBuffer = rect.allocate(1);
+      const model = toolData.measure.lineTransform;
+      lineBuffer.set(model);
+      const red = new Float32Array([1, 0, 0, 1]);
+      lineBuffer.set(red, model.length);
+      rect.draw();
+    }
+
+    // draw measure cells
+    renderer.useTexture("system.plain");
+    if (toolData.measure.cells.length > 0) {
+      const white = new Float32Array([1, 1, 1, 0.4])
+      const buffer = rect.allocate(toolData.measure.cells.length);
+      for (let i = 0; i < toolData.measure.cells.length; i++) {
+        const offset = i * rect.instanceSize;
+        const model = GLM.mat4.create();
+        const coord = toolData.measure.cells[i];
+        GLM.mat4.translate(model, model, GLM.vec3.fromValues(coord.x, coord.y, 0.1));
+        buffer.set(model, offset);
+        buffer.set(white, offset + model.length);
+      }
+      rect.draw();
+    }
+
     // draw the decorations
     for (const decoration of levelData.decorations) {
       const model = renderer.getAndUseElement<StaticModel>(decorationModelLookup[decoration]);
@@ -453,31 +506,34 @@
     await goto(resolve("/dashboard"));
   }
 
-  function handleChangeTool(tool: GameMenuTool | null) {
-    // TODO: implement the functional tool types, rather than the pure UI GameMenuTool
-    selectedTool = tool;
-  }
-
   function handleClear() {
     input = { type: "none" };
   }
 
   function handlePress(event: GameMousePressEvent) {
     input = { type: "dragging", button: event.button };
+    dragStartCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
   }
 
   function handleRelease() {
     if (input.type === "dragging") {
       input = { type: "none" };
+      dragStartCoord = null;
+      dragCurrentCoord = null;
+      toolData.measure.lineTransform = null;
+      toolData.measure.cells = [];
     }
   }
 
   function handleMove(event: GameMouseMoveEvent) {
     if (input.type === "dragging") {
+      const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+      const changedCell = !dragCurrentCoord?.equals(coord.round());
+      dragCurrentCoord = coord.round();
       if (input.button === MouseButton.Middle) {
         // measure world units per pixel by unprojecting two nearby screen points
         // at the cursor location onto the z=0 plane
-        const origin = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+        const origin = coord;
         const oneRight = renderer.canvasCoordToWorldCoord(camera, event.x + 1, event.y);
         const oneDown = renderer.canvasCoordToWorldCoord(camera, event.x, event.y + 1);
 
@@ -503,6 +559,11 @@
         GLM.vec3.scaleAndAdd(translation, translation, upFlat, dy);
 
         camera?.translate(translation);
+      } else if (input.button === MouseButton.Left) {
+        if (toolData.activeTool?.type === "measure" && changedCell && dragStartCoord) {
+          toolData.updateMeasureLine(dragStartCoord, dragCurrentCoord, 0.05);
+          toolData.updateMeasureCells(dragStartCoord, dragCurrentCoord);
+        }
       }
     }
   }
@@ -619,7 +680,7 @@
     />
   </button>
   {#if showLeftMenu}
-    <GameToolMenu {handleChangeTool} {selectedTool} />
+    <GameToolMenu {toolData} />
   {/if}
   {#if showRightMenu}
     <GameMenu

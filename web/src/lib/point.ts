@@ -41,4 +41,12 @@ export class Cartesian {
   distance(other: Cartesian): number {
     return Math.sqrt(Math.pow(other.x - this.x, 2) + Math.pow(other.y - this.y, 2));
   }
+
+  diagonalDistance(other: Cartesian): number {
+    return Math.max(Math.abs(other.x - this.x), Math.abs(other.y - this.y));
+  }
+
+  equals(other: Cartesian): boolean {
+    return this.x === other.x && this.y === other.y;
+  }
 }

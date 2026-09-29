@@ -1,4 +1,6 @@
 import type { APIProfile } from "$lib/api";
+import type { Cartesian } from "$lib/point";
+import * as GLM from "gl-matrix";
 
 export type GameMessage = {
   content: string;
@@ -14,10 +16,19 @@ export enum GameMenuTab {
   Settings = "material-symbols:settings",
 }
 
-export enum GameMenuTool {
+export enum GameMenuToolIcon {
   Select = "bxs:pointer",
   Measure = "mdi:ruler",
   Shape = "material-symbols:shapes",
   Draw = "material-symbols:draw",
   Dice = "fa-solid:dice-d20",
 }
+
+export enum MeasureShape {
+  Line,
+  Square,
+  Circle,
+  Cone,
+}
+
+export type GameTool = { type: string; icon: GameMenuToolIcon };

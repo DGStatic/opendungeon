@@ -1,37 +1,44 @@
 <script lang="ts">
-  import { GameMenuTool } from "$lib/game";
+  import { GameMenuToolIcon } from "$lib/game";
+    import type { GameTools } from "$lib/game/gameTools.svelte";
   import Icon from "@iconify/svelte";
 
   type Props = {
-    handleChangeTool: (tool: GameMenuTool | null) => void;
-    selectedTool: GameMenuTool | null;
+    toolData: GameTools;
   };
 
-  let { handleChangeTool, selectedTool }: Props = $props();
+  let { toolData }: Props = $props();
+  const gameTools = [
+    { type: "select", icon: GameMenuToolIcon.Select },
+    { type: "measure", icon: GameMenuToolIcon.Measure },
+    { type: "shape", icon: GameMenuToolIcon.Shape },
+    { type: "draw", icon: GameMenuToolIcon.Draw },
+    { type: "dice", icon: GameMenuToolIcon.Dice },
+  ];
 </script>
 
 <div class="absolute top-32 left-6 z-10 flex flex-row gap-4">
   <ul class="flex flex-col gap-4">
-    {#each Object.values(GameMenuTool) as tool, i (i)}
+    {#each gameTools as tool, i (i)}
       <li>
         <button
-          data-active={selectedTool === tool}
+          data-active={toolData.activeTool === tool}
           onpointerdown={() => {
-            if (selectedTool === tool) {
-              handleChangeTool(null);
+            if (toolData.activeTool?.type === tool.type) {
+              toolData.activeTool = null;
             } else {
-              handleChangeTool(tool);
+              toolData.activeTool = tool
             }
           }}
           class="p-2 bg-aurora-gray-1200 hover:bg-aurora-gray-1000 active:bg-aurora-gray-800 data-[active=true]:bg-aurora-gray-800 border-2 border-aurora-gray-400 duration-150 rounded-md"
         >
-          <span class="sr-only">{tool}</span>
-          <Icon icon={tool} width={24} height={24} />
+          <span class="sr-only">{tool.type}</span>
+          <Icon icon={tool.icon} width={24} height={24} />
         </button>
       </li>
     {/each}
   </ul>
-  {#if selectedTool !== GameMenuTool.Select}
+  {#if toolData.activeTool?.type === "select"}
     <!-- TODO: implement tool options -->
     <div class="bg-aurora-gray-1400 border-2 border-aurora-gray-400 rounded-sm p-2 w-2xs"></div>
   {/if}

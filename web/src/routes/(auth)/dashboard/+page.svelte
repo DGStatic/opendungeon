@@ -155,7 +155,6 @@
 
     const body = new FormData();
     const invitee = friends[index].profile.id;
-    console.log(invitee);
     body.append("userID", invitee);
     body.append("permissionLevel", "player");
     const inviteRes = await callAPI(fetch, "POST", "/games/" + activeGame!.id + "/players", {

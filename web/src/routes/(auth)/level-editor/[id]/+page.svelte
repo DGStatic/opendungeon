@@ -484,7 +484,7 @@
     if (input.type === "dragging") {
       const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
       if (input.button === MouseButton.Middle) {
-        const end = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+        const end = coord
         const start = renderer.canvasCoordToWorldCoord(
           camera,
           event.x - event.deltaX,
