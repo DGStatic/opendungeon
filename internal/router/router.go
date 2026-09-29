@@ -123,7 +123,7 @@ func New(cfg Config) (http.Handler, error) {
 
 	// friend routes
 	mux.Handle("POST /api/friends", middlewares.Auth(http.HandlerFunc(app.createFriend)))
-	mux.Handle("PUT /api/friends/{userID}", middlewares.Auth(http.HandlerFunc(app.confirmFriend)))
+	mux.Handle("PUT /api/friends/{userID}", middlewares.Auth(http.HandlerFunc(app.acceptFriend)))
 	mux.Handle("DELETE /api/friends/{userID}", middlewares.Auth(http.HandlerFunc(app.deleteFriend)))
 	mux.Handle("GET /api/friends", middlewares.Auth(http.HandlerFunc(app.listFriends)))
 

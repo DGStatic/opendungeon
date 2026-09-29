@@ -31,7 +31,7 @@
   );
   let friends = $derived(
     data.friends?.filter(
-      (f) => f.confirmed && !activeGame?.profiles.find((profile) => profile.id === f.profile.id),
+      (f) => f.accepted && !activeGame?.profiles.find((profile) => profile.id === f.profile.id),
     ) ?? [],
   );
   let pressedPlay = $state(false);

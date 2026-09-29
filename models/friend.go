@@ -10,17 +10,19 @@ type Friend struct {
 	InitiatorID uuid.UUID `json:"initiatorID"`
 	TargetID    uuid.UUID `json:"targetID"`
 	Profile     Profile   `json:"profile"`
-	Confirmed   bool      `json:"confirmed"`
+	Accepted    bool      `json:"accepted"`
 	CreatedAt   int64     `json:"createdAt"`
+	UpdatedAt   int64     `json:"updatedAt"`
 }
 
-func RepoToFriend(initiatorID, targetID uuid.UUID, confirmed bool, createdAt int64, p Profile) Friend {
+func RepoToFriend(initiatorID, targetID uuid.UUID, accepted bool, createdAt, updatedAt int64, p Profile) Friend {
 	return Friend{
 		InitiatorID: initiatorID,
 		TargetID:    targetID,
 		Profile:     p,
-		Confirmed:   confirmed,
+		Accepted:    accepted,
 		CreatedAt:   createdAt,
+		UpdatedAt:   updatedAt,
 	}
 }
 
@@ -37,7 +39,7 @@ func RepoToFriends(f []repository.ListFriendsRow, userID uuid.UUID) []Friend {
 			avatar = &avatarId
 		}
 		profile := RepoToProfile(row.Profile, id, avatar)
-		friends = append(friends, RepoToFriend(row.InitiatorUuid, row.TargetUuid, row.Confirmed, row.CreatedAt, profile))
+		friends = append(friends, RepoToFriend(row.InitiatorUuid, row.TargetUuid, row.Accepted, row.CreatedAt, row.UpdatedAt, profile))
 	}
 
 	return friends

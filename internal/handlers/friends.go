@@ -63,18 +63,19 @@ func CreateFriend(
 		friend.TargetUuid,
 		false,
 		friend.CreatedAt,
+		friend.CreatedAt,
 		models.RepoToProfile(row.Profile, friend.TargetUuid, avatar),
 	), nil
 }
 
-func ConfirmFriend(
+func AcceptFriend(
 	ctx context.Context,
 	conn *sql.Conn,
 	userID uuid.UUID,
 	targetID uuid.UUID,
 ) error {
 	repo := repository.New(conn)
-	_, err := repo.ConfirmFriend(ctx, repository.ConfirmFriendParams{
+	_, err := repo.AcceptFriend(ctx, repository.AcceptFriendParams{
 		UserUuid:   userID,
 		TargetUuid: targetID,
 	})
@@ -89,7 +90,7 @@ func ConfirmFriend(
 			}
 		}
 
-		slog.Error("failed to confirm friend", "error", err)
+		slog.Error("failed to accept friend", "error", err)
 		return ErrDatabaseFailure
 	}
 

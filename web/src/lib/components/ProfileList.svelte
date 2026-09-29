@@ -5,7 +5,7 @@
   import { Avatar } from "melt/components";
   import type { ClassValue } from "svelte/elements";
 
-  export type ActionButton = {
+  type ActionButton = {
     icon: string;
     /** Tailwind text color class, e.g. "text-danger" */
     color: string;

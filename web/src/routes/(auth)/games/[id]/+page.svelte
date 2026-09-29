@@ -57,7 +57,7 @@
   );
   let friends = $derived(
     data.friends?.filter(
-      (f) => f.confirmed && !Object.values(profiles).find((profile) => profile.id === f.profile.id),
+      (f) => f.accepted && !Object.values(profiles).find((profile) => profile.id === f.profile.id),
     ) ?? [],
   );
   let messages: GameMessage[] = $state([]);

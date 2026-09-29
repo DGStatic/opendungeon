@@ -110,7 +110,7 @@ export type APICharacter = {
 export type APIFriend = {
   initiatorID: string;
   targetID: string;
-  confirmed: boolean;
+  accepted: boolean;
   createdAt: number;
   profile: APIProfile;
 };

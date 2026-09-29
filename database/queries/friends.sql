@@ -11,12 +11,12 @@ join users t
 where i.uuid = sqlc.arg(initiator_uuid)
 returning
   (select u.uuid as target_uuid from users u where u.user_id = target_id),
-  confirmed,
+  accepted,
   created_at;
 
--- name: ConfirmFriend :one
+-- name: AcceptFriend :one
 update friends
-set confirmed = true
+set accepted = true, updated_at = unixepoch()
 where exists (
   select 1
   from users u
@@ -26,7 +26,7 @@ where exists (
     and u.user_id in (friends.initiator_id, friends.target_id)
     and t.user_id in (friends.initiator_id, friends.target_id)
 )
-returning confirmed;
+returning accepted;
 
 -- name: DeleteFriend :one
 delete from friends
@@ -39,14 +39,15 @@ where exists (
     and u.user_id in (friends.initiator_id, friends.target_id)
     and t.user_id in (friends.initiator_id, friends.target_id)
 )
-returning confirmed;
+returning accepted;
 
 -- name: ListFriends :many
 select f.friend_id,
   i.uuid as initiator_uuid,
   t.uuid as target_uuid,
-  f.confirmed,
+  f.accepted,
   f.created_at,
+  f.updated_at,
   sqlc.embed(p),
   m.uuid as avatar_uuid
 from users u

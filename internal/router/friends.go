@@ -35,7 +35,7 @@ func (app *App) createFriend(w http.ResponseWriter, r *http.Request) {
 	_ = writeJSON(w, http.StatusOK, friend)
 }
 
-func (app *App) confirmFriend(w http.ResponseWriter, r *http.Request) {
+func (app *App) acceptFriend(w http.ResponseWriter, r *http.Request) {
 	userID, ok := getUserID(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized.", http.StatusUnauthorized)
@@ -57,7 +57,7 @@ func (app *App) confirmFriend(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	err = handlers.ConfirmFriend(r.Context(), conn, userID, targetID)
+	err = handlers.AcceptFriend(r.Context(), conn, userID, targetID)
 	if err != nil {
 		writeHandlerErr(w, err)
 		return
