@@ -142,8 +142,10 @@ export class GameTools {
           const current = polygon[j];
           const previousSide = side(a, b, previous);
           const currentSide = side(a, b, current);
-          if ((previousSide >= 0) !== (currentSide >= 0)) {
-            clipped.push(Cartesian.lerp(previous, current, previousSide / (previousSide - currentSide)));
+          if (previousSide >= 0 !== currentSide >= 0) {
+            clipped.push(
+              Cartesian.lerp(previous, current, previousSide / (previousSide - currentSide)),
+            );
           }
           if (currentSide >= 0) {
             clipped.push(current);

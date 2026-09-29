@@ -1,6 +1,6 @@
 <script lang="ts">
   import { GameMenuToolIcon } from "$lib/game";
-    import type { GameTools } from "$lib/game/gameTools.svelte";
+  import type { GameTools } from "$lib/game/gameTools.svelte";
   import Icon from "@iconify/svelte";
 
   type Props = {
@@ -27,7 +27,7 @@
             if (toolData.activeTool?.type === tool.type) {
               toolData.activeTool = null;
             } else {
-              toolData.activeTool = tool
+              toolData.activeTool = tool;
             }
           }}
           class="p-2 bg-aurora-gray-1200 hover:bg-aurora-gray-1000 active:bg-aurora-gray-800 data-[active=true]:bg-aurora-gray-800 border-2 border-aurora-gray-400 duration-150 rounded-md"

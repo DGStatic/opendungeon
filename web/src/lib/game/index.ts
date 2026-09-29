@@ -1,6 +1,4 @@
 import type { APIProfile } from "$lib/api";
-import type { Cartesian } from "$lib/point";
-import * as GLM from "gl-matrix";
 
 export type GameMessage = {
   content: string;

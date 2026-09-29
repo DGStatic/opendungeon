@@ -9,7 +9,7 @@
     type Message,
     type PingMessage,
   } from "$lib/messages";
-  import { MeasureShape, type GameMessage } from "$lib/game";
+  import { type GameMessage } from "$lib/game";
   import {
     callAPI,
     getMediaUrl,
@@ -369,7 +369,7 @@
     // draw measure cells
     renderer.useTexture("system.plain");
     if (toolData.measure.cells.length > 0) {
-      const white = new Float32Array([1, 1, 1, 0.4])
+      const white = new Float32Array([1, 1, 1, 0.4]);
       const buffer = rect.allocate(toolData.measure.cells.length);
       for (let i = 0; i < toolData.measure.cells.length; i++) {
         const offset = i * rect.instanceSize;
