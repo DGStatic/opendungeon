@@ -209,7 +209,7 @@ export class GameTools {
     const minY = Math.round(Math.min(...triangle.map((p) => p.y)));
     const maxY = Math.round(Math.max(...triangle.map((p) => p.y)));
 
-    // a cell is affected based on a percentage of coverage, ignoring cells it only touches along an edge
+    // a cell is affected based on a percentage of coverage
     const cells: Cartesian[] = [];
     for (let x = minX; x <= maxX; x++) {
       for (let y = minY; y <= maxY; y++) {
