@@ -5,6 +5,7 @@ import * as GLM from "gl-matrix";
 type SelectTool = {};
 type MeasureTool = {
   shape: MeasureShape;
+  useFullCells: boolean;
   lineTransform: GLM.mat4 | null;
   cells: Cartesian[];
   distance: number;
@@ -18,6 +19,7 @@ export class GameTools {
   select: SelectTool = $state.raw({});
   measure: MeasureTool = $state.raw({
     shape: MeasureShape.Line,
+    useFullCells: true,
     lineTransform: null,
     cells: [],
     distance: 0,
@@ -43,41 +45,58 @@ export class GameTools {
 
   updateMeasureCells(from: Cartesian, to: Cartesian) {
     this.measure = { ...this.measure, cells: [] };
-    const distance = Math.round(from.distance(to));
-    // convert from quarter squares to full squares
-    from = new Cartesian(Math.floor(from.x / 2), Math.floor(from.y / 2));
-    to = new Cartesian(Math.floor(to.x / 2), Math.floor(to.y / 2));
-    let fullCells = [...this.measure.cells];
+
+    if (this.measure.useFullCells) {
+      // convert from quarter squares to full squares
+      from = new Cartesian(Math.floor(from.x / 2), Math.floor(from.y / 2));
+      to = new Cartesian(Math.floor(to.x / 2), Math.floor(to.y / 2));
+    }
+    let distance = Math.floor(from.diagonalDistance(to));
+    if (this.measure.shape === MeasureShape.Square) {
+      distance += 1;
+    } else if (this.measure.shape === MeasureShape.Circle) {
+      distance = Math.max(1, distance);
+    }
+    let cells = [...this.measure.cells];
     switch (this.measure.shape) {
+      case MeasureShape.Path:
+        cells = this.getCellsInLine(from, to); // TODO: Replace with getCellsInPath once weights and obstacles are a thing, which uses a pathfinding algorithm
+        break;
       case MeasureShape.Line:
-        fullCells = this.getCellsInLine(from, to);
+        cells = this.getCellsInLine(from, to);
         break;
       case MeasureShape.Square:
-        fullCells = this.getCellsInSquare(from, to);
+        cells = this.getCellsInSquare(from, to);
         break;
       case MeasureShape.Circle:
-        fullCells = this.getCellsInCircle(from, to);
+        cells = this.getCellsInCircle(from, to);
         break;
       case MeasureShape.Cone:
-        fullCells = this.getCellsInCone(from, to);
+        cells = this.getCellsInCone(from, to);
         break;
     }
-    // convert back to quarter squares
-    let quarterCells = [];
-    for (const cell of fullCells) {
-      const coord = new Cartesian(cell.x * 2, cell.y * 2);
-      quarterCells.push(new Cartesian(coord.x, coord.y));
-      quarterCells.push(new Cartesian(coord.x + 1, coord.y));
-      quarterCells.push(new Cartesian(coord.x + 1, coord.y + 1));
-      quarterCells.push(new Cartesian(coord.x, coord.y + 1));
+    if (this.measure.useFullCells) {
+      // convert back to quarter squares
+      let quarterCells = [];
+      for (const cell of cells) {
+        const coord = new Cartesian(cell.x * 2, cell.y * 2);
+        quarterCells.push(new Cartesian(coord.x, coord.y));
+        quarterCells.push(new Cartesian(coord.x + 1, coord.y));
+        quarterCells.push(new Cartesian(coord.x + 1, coord.y + 1));
+        quarterCells.push(new Cartesian(coord.x, coord.y + 1));
+      }
+
+      this.measure = { ...this.measure, cells: quarterCells, distance };
+      return;
     }
-    this.measure = { ...this.measure, cells: quarterCells, distance };
+
+    this.measure = { ...this.measure, cells, distance };
   }
 
   private getCellsInLine(from: Cartesian, to: Cartesian): Cartesian[] {
     const cells: Cartesian[] = [];
     const n = Math.round(from.diagonalDistance(to));
-    for (let step = 0; step <= n; step++) {
+    for (let step = 1; step <= n; step++) {
       const t = n === 0 ? 0.0 : step / n;
       cells.push(Cartesian.lerp(from, to, t).round());
     }

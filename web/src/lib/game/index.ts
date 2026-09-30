@@ -7,11 +7,11 @@ export type GameMessage = {
 };
 
 export enum GameMenuTab {
-  Chat = "material-symbols:chat",
-  Players = "material-symbols:person",
-  Levels = "material-symbols:map-outline",
+  Chat = "game-icons:chat-bubble",
+  Players = "game-icons:tabletop-players",
+  Levels = "game-icons:treasure-map",
   Characters = "game-icons:character",
-  Settings = "material-symbols:settings",
+  Settings = "game-icons:cog",
 }
 
 export enum GameMenuToolIcon {
@@ -23,10 +23,11 @@ export enum GameMenuToolIcon {
 }
 
 export enum MeasureShape {
-  Line,
-  Square,
-  Circle,
-  Cone,
+  Path = "boxicons:path",
+  Line = "ant-design:line-outlined",
+  Square = "akar-icons:square",
+  Circle = "akar-icons:circle",
+  Cone = "fluent:cone-16-regular",
 }
 
 export type GameTool = { type: string; icon: GameMenuToolIcon };

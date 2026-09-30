@@ -49,6 +49,13 @@
   let message = $state<string>("");
   let chatContainer = $state<HTMLUListElement>();
   let messageInput = $state<HTMLInputElement>();
+  const menuTabs = [
+    { title: "Chat", tab: GameMenuTab.Chat },
+    { title: "Players", tab: GameMenuTab.Players },
+    { title: "Levels", tab: GameMenuTab.Levels },
+    { title: "Characters", tab: GameMenuTab.Characters },
+    { title: "Settings", tab: GameMenuTab.Settings },
+  ];
 
   $effect(() => {
     void messages.length;
@@ -60,11 +67,12 @@
   class="absolute top-32 right-6 bottom-32 z-10 bg-black border-2 border-aurora-gray-400 rounded-sm w-xs flex flex-col"
 >
   <div class="flex flex-row w-full justify-evenly border-b-2 border-aurora-gray-400">
-    {#each Object.values(GameMenuTab) as tab, i (i)}
+    {#each menuTabs as { tab, title }, i (i)}
       {#if tab === GameMenuTab.Levels && !isGameMaster}
         {null}
       {:else}
         <button
+          {title}
           data-active={selectedTab === tab}
           data-borderActive={i !== Object.values(GameMenuTab).length - 1}
           class="flex items-center justify-center bg-aurora-gray-1100 hover:bg-aurora-gray-700 data-[active=true]:bg-aurora-gray-600 w-full py-1 data-[borderActive=true]:border-r-2 border-aurora-gray-400 duration-100"

@@ -9,7 +9,7 @@
     type Message,
     type PingMessage,
   } from "$lib/messages";
-  import { type GameMessage } from "$lib/game";
+  import { MeasureShape, type GameMessage } from "$lib/game";
   import {
     callAPI,
     getMediaUrl,
@@ -706,6 +706,8 @@
     bind:this={measureText}
     class="absolute pointer-events-none z-10 text-red-600 text-2xl p-1 font-bold hidden data-[active=true]:flex"
   >
-    <span class="text-shadow-aurora-gray-1400 text-shadow-sm">{(toolData.measure.distance * 2.5) + "ft"}</span>
+    <span class="text-shadow-aurora-gray-1400 text-shadow-sm"
+      >{toolData.measure.distance * (toolData.measure.useFullCells ? 5 : 2.5) + "ft"}</span
+    >
   </div>
 </main>
