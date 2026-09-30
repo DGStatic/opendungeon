@@ -2,7 +2,7 @@ import { Cartesian } from "$lib/point";
 import { MeasureShape, type GameTool } from ".";
 import * as GLM from "gl-matrix";
 
-type SelectTool = {};
+type SelectTool = Object; // TODO: Replace with actual configuration
 type MeasureTool = {
   shape: MeasureShape;
   useFullCells: boolean;
@@ -10,9 +10,9 @@ type MeasureTool = {
   cells: Cartesian[];
   distance: number;
 };
-type ShapeTool = {};
-type DrawTool = {};
-type DiceTool = {};
+type ShapeTool = Object;
+type DrawTool = Object;
+type DiceTool = Object;
 
 export class GameTools {
   activeTool: GameTool | null = $state(null);
@@ -77,7 +77,7 @@ export class GameTools {
     }
     if (this.measure.useFullCells) {
       // convert back to quarter squares
-      let quarterCells = [];
+      const quarterCells = [];
       for (const cell of cells) {
         const coord = new Cartesian(cell.x * 2, cell.y * 2);
         quarterCells.push(new Cartesian(coord.x, coord.y));
