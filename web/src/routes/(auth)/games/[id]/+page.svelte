@@ -9,7 +9,7 @@
     type Message,
     type PingMessage,
   } from "$lib/messages";
-  import { MeasureShape, type GameMessage } from "$lib/game";
+  import { type GameMessage } from "$lib/game";
   import {
     callAPI,
     getMediaUrl,
