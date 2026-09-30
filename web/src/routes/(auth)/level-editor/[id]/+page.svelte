@@ -33,7 +33,7 @@
   import ModelViewer from "$lib/components/ModelViewer.svelte";
   import type StaticModel from "$lib/renderer/model/static";
   import { MAT4_FLOAT_SIZE } from "$lib/renderer/consts";
-  import { GRID_HEIGHT, GRID_WIDTH } from "$lib/game";
+  import { GRID_HEIGHT, GRID_WIDTH, MAXIMUM_ZOOM, MINIMUM_ZOOM } from "$lib/game";
 
   let { data }: PageProps = $props();
 
@@ -53,6 +53,7 @@
   };
   let dragStartCoord: Cartesian | null = null;
   let dragCurrentCoord: Cartesian | null = null;
+  let panAnchor: Cartesian | null = null;
   let rectId: number;
   let selectedArea: {
     center: Cartesian;
@@ -256,20 +257,20 @@
 
     // draw grid lines
     renderer.useTexture("system.plain");
-    const buffer = rect.allocate(GRID_HEIGHT / 2 + GRID_WIDTH / 2);
+    const buffer = rect.allocate(GRID_HEIGHT / 2 + GRID_WIDTH / 2 + 2);
     let offset = 0;
-    for (let row = 0; row < GRID_HEIGHT; row += 2) {
+    for (let row = 0; row <= GRID_HEIGHT; row += 2) {
       const model = GLM.mat4.create();
-      GLM.mat4.translate(model, model, GLM.vec3.fromValues(GRID_WIDTH / 2, row + 0.5, 1));
-      GLM.mat4.scale(model, model, GLM.vec3.fromValues(GRID_WIDTH, 0.1, 1));
+      GLM.mat4.translate(model, model, GLM.vec3.fromValues(GRID_WIDTH / 2 - 0.5, row - 0.5, 0.01));
+      GLM.mat4.scale(model, model, GLM.vec3.fromValues(GRID_WIDTH + 0.1, 0.1, 1));
       buffer.set(model, offset);
       buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
       offset += rect.instanceSize;
     }
-    for (let col = 0; col < GRID_WIDTH; col += 2) {
+    for (let col = 0; col <= GRID_WIDTH; col += 2) {
       const model = GLM.mat4.create();
-      GLM.mat4.translate(model, model, GLM.vec3.fromValues(col + 0.5, GRID_HEIGHT / 2, 1));
-      GLM.mat4.scale(model, model, GLM.vec3.fromValues(0.1, GRID_HEIGHT, 1));
+      GLM.mat4.translate(model, model, GLM.vec3.fromValues(col - 0.5, GRID_HEIGHT / 2 - 0.5, 0.01));
+      GLM.mat4.scale(model, model, GLM.vec3.fromValues(0.1, GRID_HEIGHT + 0.1, 1));
       buffer.set(model, offset);
       buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
       offset += rect.instanceSize;
@@ -362,6 +363,9 @@
   }
 
   function handlePress(event: GameMousePressEvent) {
+    const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+    panAnchor = coord;
+    input = { type: "down", button: event.button };
     if (selectedDecoration) {
       if (event.button === MouseButton.Left) {
         if (!levelData.decorations.includes(selectedDecoration)) {
@@ -373,8 +377,12 @@
         );
         assert(decorationIndex !== -1, "selected decoration not found in level data");
 
-        const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
-        if (coord.x < 0 || coord.x >= GRID_WIDTH || coord.y < 0 || coord.y >= GRID_HEIGHT) {
+        if (
+          coord.x < -0.5 ||
+          coord.x >= GRID_WIDTH - 0.5 ||
+          coord.y < -0.5 ||
+          coord.y >= GRID_HEIGHT - 0.5
+        ) {
           return;
         }
 
@@ -388,8 +396,6 @@
         });
       }
     } else {
-      input = { type: "down", button: event.button };
-      const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
       if (event.button === MouseButton.Left && !selectedTexture) {
         dragStartCoord = coord;
       } else {
@@ -444,11 +450,13 @@
       }
       dragStartCoord = null;
       dragCurrentCoord = null;
+      panAnchor = null;
     } else if (input.type === "down") {
       input = { type: "none" };
       dragStartCoord = null;
       dragCurrentCoord = null;
-      if (event.button === MouseButton.Left) {
+      panAnchor = null;
+      if (event.button === MouseButton.Left && !selectedDecoration) {
         // select the closest decoration within an area
         selectedArea = null;
         selectedDecorations = [];
@@ -481,16 +489,9 @@
   function handleMove(event: GameMouseMoveEvent) {
     if (input.type === "dragging") {
       const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
-      if (input.button === MouseButton.Middle) {
-        const end = coord;
-        const start = renderer.canvasCoordToWorldCoord(
-          camera,
-          event.x - event.deltaX,
-          event.y - event.deltaY,
-        );
-        const delta = start.subtract(end);
-
-        camera?.translate(GLM.vec3.fromValues(-delta.x, delta.y, 0));
+      if (input.button === MouseButton.Middle && panAnchor) {
+        const translation = GLM.vec3.fromValues(coord.x - panAnchor.x, coord.y - panAnchor.y, 0);
+        camera.translate(translation);
       } else if (input.button === MouseButton.Left) {
         if (selectedTexture) {
           dragCurrentCoord = coord.round();
@@ -499,17 +500,17 @@
         }
         if (selectedArea) {
           // move selected area and the objects within if the mouse is in the selected area
-          if (dragCurrentCoord.x + selectedArea.width / 2 > GRID_WIDTH) {
-            dragCurrentCoord.x = GRID_WIDTH - selectedArea.width / 2;
+          if (dragCurrentCoord.x + selectedArea.width / 2 > GRID_WIDTH - 0.5) {
+            dragCurrentCoord.x = GRID_WIDTH - 0.5 - selectedArea.width / 2;
           }
-          if (dragCurrentCoord.x - selectedArea.width / 2 < 0) {
-            dragCurrentCoord.x = 0 + selectedArea.width / 2;
+          if (dragCurrentCoord.x - selectedArea.width / 2 < -0.5) {
+            dragCurrentCoord.x = -0.5 + selectedArea.width / 2;
           }
-          if (dragCurrentCoord.y + selectedArea.height / 2 > GRID_HEIGHT) {
-            dragCurrentCoord.y = GRID_HEIGHT - selectedArea.height / 2;
+          if (dragCurrentCoord.y + selectedArea.height / 2 > GRID_HEIGHT - 0.5) {
+            dragCurrentCoord.y = GRID_HEIGHT - 0.5 - selectedArea.height / 2;
           }
-          if (dragCurrentCoord.y - selectedArea.height / 2 < 0) {
-            dragCurrentCoord.y = 0 + selectedArea.height / 2;
+          if (dragCurrentCoord.y - selectedArea.height / 2 < -0.5) {
+            dragCurrentCoord.y = -0.5 + selectedArea.height / 2;
           }
           const deltaX = dragCurrentCoord.x - selectedArea.center.x;
           const deltaY = dragCurrentCoord.y - selectedArea.center.y;
@@ -549,7 +550,13 @@
   }
 
   function handleScroll(event: GameMouseScrollEvent) {
-    camera!.zoom = Math.max(1, camera!.zoom + event.delta / 25);
+    const delta = 1 + Math.pow(camera.zoom, 2.25) / 1000;
+    const newZoom = camera!.zoom + (event.delta > 0 ? delta : -delta);
+    if (newZoom < camera!.zoom) {
+      camera!.zoom = Math.max(MINIMUM_ZOOM, newZoom);
+    } else {
+      camera!.zoom = Math.min(MAXIMUM_ZOOM, newZoom);
+    }
   }
 
   function handleKeyPress(event: GameKeyEvent) {

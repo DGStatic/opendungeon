@@ -3,6 +3,9 @@ import type { APIProfile } from "$lib/api";
 export const GRID_HEIGHT = 256;
 export const GRID_WIDTH = 256;
 
+export const MINIMUM_ZOOM = 2;
+export const MAXIMUM_ZOOM = 100;
+
 export type GameMessage = {
   content: string;
   isSystemMessage: boolean;

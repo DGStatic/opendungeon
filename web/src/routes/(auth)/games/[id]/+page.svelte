@@ -9,7 +9,7 @@
     type Message,
     type PingMessage,
   } from "$lib/messages";
-  import { type GameMessage } from "$lib/game";
+  import { GRID_HEIGHT, GRID_WIDTH, MAXIMUM_ZOOM, MINIMUM_ZOOM, type GameMessage } from "$lib/game";
   import {
     callAPI,
     getMediaUrl,
@@ -87,6 +87,7 @@
   const decorationsByKey: Record<string, APILevelDecorationData[]> = {};
   let dragStartCoord: Cartesian | null = null;
   let dragCurrentCoord: Cartesian | null = null;
+  let panAnchor: Cartesian | null = null;
 
   function getMessageId() {
     const id = messageIdHandle;
@@ -121,6 +122,7 @@
     camera = new PerspectiveCamera(canvas!.width / canvas!.height); // TODO: handle resizing window
     camera.rotateX(-degToRad(30));
     camera.zoom = 100;
+    camera.translate(GLM.vec3.fromValues(-GRID_WIDTH / 2, 0, 0));
 
     rectId = renderer.createElement(Rectangle);
     renderer.loadTexture("system.plain", new Texture(1, 1)).then(() => (loading = false));
@@ -332,28 +334,28 @@
       rect.draw();
     }
 
-    // // TODO: Make this a toggleable setting. For now, just comment this out or not.
-    // // draw grid lines
-    // renderer.useTexture("system.plain");
-    // const buffer = rect.allocate(GRID_HEIGHT / 2 + GRID_WIDTH / 2);
-    // let offset = 0;
-    // for (let row = 0; row < GRID_HEIGHT; row += 2) {
-    //   const model = GLM.mat4.create();
-    //   GLM.mat4.translate(model, model, GLM.vec3.fromValues(GRID_WIDTH / 2, row - 0.5, 0.1));
-    //   GLM.mat4.scale(model, model, GLM.vec3.fromValues(GRID_WIDTH + 1, 0.1, 1));
-    //   buffer.set(model, offset);
-    //   buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
-    //   offset += rect.instanceSize;
-    // }
-    // for (let col = 0; col < GRID_WIDTH; col += 2) {
-    //   const model = GLM.mat4.create();
-    //   GLM.mat4.translate(model, model, GLM.vec3.fromValues(col - 0.5, GRID_HEIGHT / 2, 0.1));
-    //   GLM.mat4.scale(model, model, GLM.vec3.fromValues(0.1, GRID_HEIGHT + 1, 1));
-    //   buffer.set(model, offset);
-    //   buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
-    //   offset += rect.instanceSize;
-    // }
-    // rect.draw();
+    // TODO: Make this a toggleable setting. For now, just comment this out or not.
+    // draw grid lines
+    renderer.useTexture("system.plain");
+    const buffer = rect.allocate(GRID_HEIGHT / 2 + GRID_WIDTH / 2 + 2);
+    let offset = 0;
+    for (let row = 0; row <= GRID_HEIGHT; row += 2) {
+      const model = GLM.mat4.create();
+      GLM.mat4.translate(model, model, GLM.vec3.fromValues(GRID_WIDTH / 2 - 0.5, row - 0.5, 0.01));
+      GLM.mat4.scale(model, model, GLM.vec3.fromValues(GRID_WIDTH + 0.1, 0.1, 1));
+      buffer.set(model, offset);
+      buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
+      offset += rect.instanceSize;
+    }
+    for (let col = 0; col <= GRID_WIDTH; col += 2) {
+      const model = GLM.mat4.create();
+      GLM.mat4.translate(model, model, GLM.vec3.fromValues(col - 0.5, GRID_HEIGHT / 2 - 0.5, 0.01));
+      GLM.mat4.scale(model, model, GLM.vec3.fromValues(0.1, GRID_HEIGHT + 0.1, 1));
+      buffer.set(model, offset);
+      buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
+      offset += rect.instanceSize;
+    }
+    rect.draw();
 
     // draw measure line
     if (toolData.measure.lineTransform) {
@@ -374,7 +376,7 @@
         const offset = i * rect.instanceSize;
         const model = GLM.mat4.create();
         const coord = toolData.measure.cells[i];
-        GLM.mat4.translate(model, model, GLM.vec3.fromValues(coord.x, coord.y, 0.11));
+        GLM.mat4.translate(model, model, GLM.vec3.fromValues(coord.x, coord.y, 0.02));
         buffer.set(model, offset);
         buffer.set(white, offset + model.length);
       }
@@ -511,7 +513,9 @@
 
   function handlePress(event: GameMousePressEvent) {
     input = { type: "dragging", button: event.button };
-    dragStartCoord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y).round();
+    const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+    dragStartCoord = coord.round();
+    panAnchor = coord;
   }
 
   function handleRelease() {
@@ -519,6 +523,7 @@
       input = { type: "none" };
       dragStartCoord = null;
       dragCurrentCoord = null;
+      panAnchor = null;
       toolData.measure = { ...toolData.measure, cells: [], distance: 0, lineTransform: null };
     }
   }
@@ -528,35 +533,11 @@
       const coord = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
       const changedCell = !dragCurrentCoord?.equals(coord.round());
       dragCurrentCoord = coord.round();
-      if (input.button === MouseButton.Middle) {
-        // measure world units per pixel by unprojecting two nearby screen points
-        // at the cursor location onto the z=0 plane
-        const origin = coord;
-        const oneRight = renderer.canvasCoordToWorldCoord(camera, event.x + 1, event.y);
-        const oneDown = renderer.canvasCoordToWorldCoord(camera, event.x, event.y + 1);
-
-        const worldPerPixelX = oneRight.subtract(origin);
-        const worldPerPixelY = oneDown.subtract(origin);
-
-        // camera basis vectors from the view matrix
-        const right = GLM.vec3.fromValues(camera.view[0], camera.view[4], camera.view[8]);
-        // "up on screen" projected onto the ground plane, so panning stays parallel to z=0 regardless of camera tilt
-        const upFlat = GLM.vec3.fromValues(camera.view[1], camera.view[5], 0);
-        GLM.vec3.normalize(right, right);
-        GLM.vec3.normalize(upFlat, upFlat);
-
-        // screen-forward magnitude of one pixel of drag, in world units
-        const pxX = GLM.vec2.length(GLM.vec2.fromValues(worldPerPixelX.x, worldPerPixelX.y));
-        const pxY = GLM.vec2.length(GLM.vec2.fromValues(worldPerPixelY.x, worldPerPixelY.y));
-
-        const dx = event.deltaX * pxX;
-        const dy = event.deltaY * pxY;
-
-        const translation = GLM.vec3.create();
-        GLM.vec3.scaleAndAdd(translation, translation, right, dx);
-        GLM.vec3.scaleAndAdd(translation, translation, upFlat, dy);
-
-        camera?.translate(translation);
+      if (input.button === MouseButton.Middle && panAnchor) {
+        // shift the world so the point grabbed on press stays under the cursor. this only relies on
+        // absolute cursor positions, not movementX/Y, which can be stale after the window regains focus
+        const translation = GLM.vec3.fromValues(coord.x - panAnchor.x, coord.y - panAnchor.y, 0);
+        camera.translate(translation);
       } else if (input.button === MouseButton.Left) {
         if (toolData.activeTool?.type === "measure" && changedCell && dragStartCoord) {
           toolData.updateMeasureLine(dragStartCoord, dragCurrentCoord, 0.05);
@@ -569,7 +550,13 @@
   }
 
   function handleScroll(event: GameMouseScrollEvent) {
-    camera!.zoom = Math.max(1, camera!.zoom + event.delta / 25);
+    const delta = 1 + Math.pow(camera.zoom, 2.25) / 1000;
+    const newZoom = camera!.zoom + (event.delta > 0 ? delta : -delta);
+    if (newZoom < camera!.zoom) {
+      camera!.zoom = Math.max(MINIMUM_ZOOM, newZoom);
+    } else {
+      camera!.zoom = Math.min(MAXIMUM_ZOOM, newZoom);
+    }
   }
 
   function handlePlayPing(coord: Cartesian) {
