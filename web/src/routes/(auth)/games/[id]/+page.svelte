@@ -654,7 +654,7 @@
   }
 </script>
 
-<main class="relative grid justify-start h-dvh">
+<main class="relative grid justify-start h-dvh overflow-hidden">
   <canvas class="absolute inset-0 bg-black" bind:this={canvas} ondblclick={handleDoubleClick}
   ></canvas>
   <button
