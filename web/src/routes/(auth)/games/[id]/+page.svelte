@@ -335,27 +335,28 @@
       rect.draw();
     }
 
-    // draw grid lines
-    renderer.useTexture("system.plain");
-    const buffer = rect.allocate(GRID_HEIGHT / 2 + GRID_WIDTH / 2);
-    let offset = 0;
-    for (let row = 0; row < GRID_HEIGHT; row += 2) {
-      const model = GLM.mat4.create();
-      GLM.mat4.translate(model, model, GLM.vec3.fromValues(GRID_WIDTH / 2, row - 0.5, 0.1));
-      GLM.mat4.scale(model, model, GLM.vec3.fromValues(GRID_WIDTH + 1, 0.1, 1));
-      buffer.set(model, offset);
-      buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
-      offset += rect.instanceSize;
-    }
-    for (let col = 0; col < GRID_WIDTH; col += 2) {
-      const model = GLM.mat4.create();
-      GLM.mat4.translate(model, model, GLM.vec3.fromValues(col - 0.5, GRID_HEIGHT / 2, 0.1));
-      GLM.mat4.scale(model, model, GLM.vec3.fromValues(0.1, GRID_HEIGHT + 1, 1));
-      buffer.set(model, offset);
-      buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
-      offset += rect.instanceSize;
-    }
-    rect.draw();
+    // // TODO: Make this a toggleable setting. For now, just comment this out or not.
+    // // draw grid lines
+    // renderer.useTexture("system.plain");
+    // const buffer = rect.allocate(GRID_HEIGHT / 2 + GRID_WIDTH / 2);
+    // let offset = 0;
+    // for (let row = 0; row < GRID_HEIGHT; row += 2) {
+    //   const model = GLM.mat4.create();
+    //   GLM.mat4.translate(model, model, GLM.vec3.fromValues(GRID_WIDTH / 2, row - 0.5, 0.1));
+    //   GLM.mat4.scale(model, model, GLM.vec3.fromValues(GRID_WIDTH + 1, 0.1, 1));
+    //   buffer.set(model, offset);
+    //   buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
+    //   offset += rect.instanceSize;
+    // }
+    // for (let col = 0; col < GRID_WIDTH; col += 2) {
+    //   const model = GLM.mat4.create();
+    //   GLM.mat4.translate(model, model, GLM.vec3.fromValues(col - 0.5, GRID_HEIGHT / 2, 0.1));
+    //   GLM.mat4.scale(model, model, GLM.vec3.fromValues(0.1, GRID_HEIGHT + 1, 1));
+    //   buffer.set(model, offset);
+    //   buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
+    //   offset += rect.instanceSize;
+    // }
+    // rect.draw();
 
     // draw measure line
     if (toolData.measure.lineTransform) {
