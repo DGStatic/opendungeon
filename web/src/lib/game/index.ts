@@ -1,5 +1,8 @@
 import type { APIProfile } from "$lib/api";
 
+export const GRID_HEIGHT = 256;
+export const GRID_WIDTH = 256;
+
 export type GameMessage = {
   content: string;
   isSystemMessage: boolean;

@@ -44,9 +44,6 @@
   import { MAT4_FLOAT_SIZE } from "$lib/renderer/consts";
   import { GameTools } from "$lib/game/gameTools.svelte";
 
-  const GRID_WIDTH = 256;
-  const GRID_HEIGHT = 256;
-
   let { data }: PageProps = $props();
 
   let socketUrl = $derived(getSocketUrl("/rooms/" + data.game.id));

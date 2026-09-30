@@ -33,9 +33,7 @@
   import ModelViewer from "$lib/components/ModelViewer.svelte";
   import type StaticModel from "$lib/renderer/model/static";
   import { MAT4_FLOAT_SIZE } from "$lib/renderer/consts";
-
-  const GRID_WIDTH = 256;
-  const GRID_HEIGHT = 256;
+  import { GRID_HEIGHT, GRID_WIDTH } from "$lib/game";
 
   let { data }: PageProps = $props();
 
