@@ -3,6 +3,7 @@ import {
   type APICellTexture,
   type APICharacter,
   type APIDecoration,
+  type APIFriend,
   type APIGame,
   type APILevel,
 } from "$lib/api";
@@ -12,11 +13,12 @@ import type { PageLoad } from "./$types";
 export const prerender = false;
 
 export const load: PageLoad = async ({ fetch, params, parent }) => {
-  const [cellTextureRes, decorationRes, charactersRes, gameRes] = await Promise.all([
+  const [cellTextureRes, decorationRes, charactersRes, gameRes, friendsRes] = await Promise.all([
     callAPI(fetch, "GET", "/cell-textures"),
     callAPI(fetch, "GET", "/decorations"),
     callAPI(fetch, "GET", "/characters"),
     callAPI(fetch, "GET", "/games/" + params.id),
+    callAPI(fetch, "GET", "/friends"),
   ]);
   if (!cellTextureRes.ok) {
     error(500, cellTextureRes.error.message);
@@ -48,6 +50,12 @@ export const load: PageLoad = async ({ fetch, params, parent }) => {
 
   const characters: APICharacter[] = await charactersRes.data.json();
 
+  if (!friendsRes.ok) {
+    error(500, friendsRes.error.message);
+  }
+
+  const friends: APIFriend[] = await friendsRes.data.json();
+
   const { profile } = await parent();
   let levels: APILevel[] = [];
   if (profile && profile.id === game.gameMasterId) {
@@ -66,5 +74,6 @@ export const load: PageLoad = async ({ fetch, params, parent }) => {
     game,
     levels,
     characters,
+    friends,
   };
 };

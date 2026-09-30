@@ -1,24 +1,25 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
-  import { getMediaUrl, type APIGame, type APILevelMetaData, type APIProfile } from "$lib/api";
-  import { getInitials, getSimplifiedTimeSince } from "$lib/utils";
+  import { type APIFriend, type APIGame, type APILevelMetaData, type APIProfile } from "$lib/api";
+  import { getSimplifiedTimeSince } from "$lib/utils";
   import Icon from "@iconify/svelte";
-  import { Avatar } from "melt/components";
   import StyledButton from "./StyledButton.svelte";
   import StyledCard from "./StyledCard.svelte";
   import StyledInput from "./StyledInput.svelte";
   import type { ClassValue } from "svelte/elements";
+  import ProfileList from "./ProfileList.svelte";
 
   type Props = {
     profile: APIProfile;
     creatingGame: boolean;
     activeGame: APIGame | null;
     activeLevel: APILevelMetaData | null;
+    friends: APIFriend[];
     handleCreateGame: (event: SubmitEvent) => void;
     handleDeleteGame: () => void;
     handleDeleteLevel: () => void;
-    handleInvitePlayer: (event: SubmitEvent) => Promise<boolean>;
+    handleAddPlayer: (index: number) => Promise<boolean>;
     onClose: () => void;
     class?: ClassValue;
   };
@@ -28,24 +29,24 @@
     creatingGame,
     activeGame,
     activeLevel,
+    friends,
     handleCreateGame,
     handleDeleteGame,
     handleDeleteLevel,
-    handleInvitePlayer,
+    handleAddPlayer,
     onClose,
     class: customClass,
   }: Props = $props();
 
   let gameName = $state("");
-  let invitee = $state("");
-  let showInviteBar = $state(false);
+  let showAddBar = $state(false);
   let showConfirmation = $state(false);
 
   $effect(() => {
     void activeGame;
     void activeLevel;
 
-    showInviteBar = false;
+    showAddBar = false;
     showConfirmation = false;
   });
 </script>
@@ -82,61 +83,31 @@
     <div class="flex flex-col gap-3">
       <div class="flex justify-between">
         <h4 class="text-lg">Players</h4>
-        <button
-          onclick={() => {
-            showInviteBar = !showInviteBar;
-            invitee = "";
-          }}
-          class="bg-aurora-gray-1000 hover:bg-aurora-gray-800 rounded px-2"
-          >{`${showInviteBar ? "Cancel" : "Invite"}`}</button
-        >
+        {#if profile.id === activeGame.gameMasterId}
+          <button
+            onclick={() => {
+              showAddBar = !showAddBar;
+            }}
+            class="bg-aurora-gray-1000 hover:bg-aurora-gray-800 rounded px-2"
+            >{`${showAddBar ? "Cancel" : "Add"}`}</button
+          >
+        {/if}
       </div>
-      {#if showInviteBar}
-        <form
-          onsubmit={(event) => {
-            handleInvitePlayer(event).then((success) => {
-              if (success) {
-                showInviteBar = false;
-                invitee = "";
-              }
-            });
-          }}
-          class="flex flex-col gap-2 px-2"
-        >
-          <StyledInput
-            bind:value={invitee}
-            name="userId"
-            placeholder="Player Id"
-            autocomplete="off"
-          />
-          <StyledButton class="" label="Confirm" />
-        </form>
+      {#if showAddBar}
+        <ProfileList
+          profiles={friends.map((friend) => friend.profile)}
+          emptyText="No friends to add..."
+          actions={[
+            {
+              icon: "akar-icons:person-add",
+              color: "text-success",
+              onclick: handleAddPlayer,
+            },
+          ]}
+          class="border border-aurora-gray-1000 rounded"
+        />
       {/if}
-      <div
-        class="p-4 flex flex-col gap-4 overflow-y-auto border rounded-sm border-aurora-gray-800 max-h-40"
-      >
-        <ul class="flex flex-col gap-4">
-          {#each activeGame.profiles as profile, i (i)}
-            <li class="text-white flex flex-row items-center bg-aurora-gray-1200 p-2 rounded-md">
-              <div class="flex flex-row gap-2 items-center">
-                <div
-                  class="w-8 h-8 bg-aurora-gray-1400 rounded-full text-center items-center border-2 border-aurora-gray-600"
-                >
-                  <Avatar src={!profile.avatarId ? "" : getMediaUrl(profile.avatarId)}>
-                    {#snippet children(avatar)}
-                      <img {...avatar.image} alt="Avatar" class="w-full-h-full rounded-full" />
-                      <span {...avatar.fallback} class="text-lg -mt-1">
-                        {getInitials(profile.username)}
-                      </span>
-                    {/snippet}
-                  </Avatar>
-                </div>
-                <h3 class="text-lg">{profile.username}</h3>
-              </div>
-            </li>
-          {/each}
-        </ul>
-      </div>
+      <ProfileList profiles={activeGame.profiles} class="border border-aurora-gray-1000 rounded" />
     </div>
     <div class="flex flex-col gap-2">
       <StyledButton label="Join Game" onclick={() => goto(resolve(`/games/${activeGame!.id}`))} />

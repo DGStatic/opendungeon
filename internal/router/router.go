@@ -121,6 +121,12 @@ func New(cfg Config) (http.Handler, error) {
 	mux.Handle("PUT /api/characters/{characterID}", middlewares.Auth(http.HandlerFunc(app.upsertCharacter)))
 	mux.Handle("GET /api/characters", middlewares.Auth(http.HandlerFunc(app.listCharacters)))
 
+	// friend routes
+	mux.Handle("POST /api/friends", middlewares.Auth(http.HandlerFunc(app.createFriend)))
+	mux.Handle("PUT /api/friends/{userID}", middlewares.Auth(http.HandlerFunc(app.acceptFriend)))
+	mux.Handle("DELETE /api/friends/{userID}", middlewares.Auth(http.HandlerFunc(app.deleteFriend)))
+	mux.Handle("GET /api/friends", middlewares.Auth(http.HandlerFunc(app.listFriends)))
+
 	// MUST GO LAST
 	if !cfg.IsDevMode {
 		sfs, err := newSPAFileServer(cfg.StaticDir)

@@ -42,6 +42,7 @@
             {/snippet}
           </Avatar>
         </button>
+
         <StyledCard {...popover.content} class="text-white p-4 min-w-[200px]">
           <div class="grid gap-2">
             <p>{data.profile.username}</p>
@@ -49,6 +50,11 @@
             <a
               href={resolve("/me/edit")}
               class="text-aurora-gray-700 duration-300 hover:text-aurora-gray-500">Edit Profile</a
+            >
+            <StyledSeparator />
+            <a
+              href={resolve("/me/friends")}
+              class="text-aurora-gray-700 duration-300 hover:text-aurora-gray-500">Friends</a
             >
             <StyledSeparator />
             <button onclick={handleSignOut} class="text-danger cursor-pointer"> Sign Out </button>

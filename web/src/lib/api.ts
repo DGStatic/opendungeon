@@ -2,6 +2,7 @@ import { isRedirect, redirect } from "@sveltejs/kit";
 
 export const UNAUTHORIZED = "unauthorized";
 export const NOT_FOUND = "not found";
+export const CONFLICT = "conflict";
 export const BASE_URL = new URL(
   import.meta.env.DEV ? "http://localhost:8000" : window.location.href,
 );
@@ -106,6 +107,14 @@ export type APICharacter = {
   updatedAt: number;
 };
 
+export type APIFriend = {
+  initiatorID: string;
+  targetID: string;
+  accepted: boolean;
+  createdAt: number;
+  profile: APIProfile;
+};
+
 export function getMediaUrl(mediaId: string): string {
   const url = new URL(BASE_URL.href);
   url.pathname = "/api/media/" + mediaId + "/content";
@@ -156,6 +165,8 @@ export async function callAPI(
       const error = new Error(message);
       if (res.status === 404) {
         error.cause = NOT_FOUND;
+      } else if (res.status === 409) {
+        error.cause = CONFLICT;
       }
 
       throw error;

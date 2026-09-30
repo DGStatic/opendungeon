@@ -14,7 +14,7 @@
 
   let { data }: PageProps = $props();
 
-  let username = $state("");
+  let username = $derived(data.profile?.username ?? "");
   let file: File | null = $state(null);
   const fileUpload = new FileUpload();
 
@@ -34,9 +34,7 @@
       return;
     }
 
-    if (!data.profile) {
-      await goto(resolve("/dashboard"), { invalidate: [resolve("/dashboard")] });
-    }
+    await goto(resolve("/dashboard"), { invalidate: [resolve("/dashboard")] });
   }
 </script>
 
@@ -49,7 +47,7 @@
     {#if data.profile}
       <a
         href={resolve("/dashboard")}
-        class="text-aurora-gray-700 underline duration-300 hover:text-aurora-gray-500">Exit</a
+        class="text-aurora-gray-700 underline duration-300 hover:text-aurora-gray-500 w-min">Exit</a
       >
       <StyledSeparator />
     {/if}
