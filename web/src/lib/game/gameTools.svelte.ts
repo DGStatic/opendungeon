@@ -2,7 +2,7 @@ import { Cartesian } from "$lib/point";
 import { MeasureShape, type GameTool } from ".";
 import * as GLM from "gl-matrix";
 
-type SelectTool = Object; // TODO: Replace with actual configuration
+type SelectTool = object; // TODO: Replace with actual configuration
 type MeasureTool = {
   shape: MeasureShape;
   useFullCells: boolean;
@@ -10,9 +10,9 @@ type MeasureTool = {
   cells: Cartesian[];
   distance: number;
 };
-type ShapeTool = Object;
-type DrawTool = Object;
-type DiceTool = Object;
+type ShapeTool = object;
+type DrawTool = object;
+type DiceTool = object;
 
 export class GameTools {
   activeTool: GameTool | null = $state(null);
