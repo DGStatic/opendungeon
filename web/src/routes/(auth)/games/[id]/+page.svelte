@@ -69,6 +69,7 @@
   let showLeftMenu = $state(true);
   let showRightMenu = $state(true);
   let toolData: GameTools = $state(new GameTools());
+  let measureText = $state<HTMLDivElement>();
   let messageIdHandle = 0;
   let pingIdHandle = 0;
   let pings: Record<number, { point: Cartesian; opacity: number }> = {};
@@ -340,16 +341,16 @@
     let offset = 0;
     for (let row = 0; row < GRID_HEIGHT; row += 2) {
       const model = GLM.mat4.create();
-      GLM.mat4.translate(model, model, GLM.vec3.fromValues(GRID_WIDTH / 2, row + 0.5, 0.1));
-      GLM.mat4.scale(model, model, GLM.vec3.fromValues(GRID_WIDTH, 0.1, 1));
+      GLM.mat4.translate(model, model, GLM.vec3.fromValues(GRID_WIDTH / 2, row - 0.5, 0.1));
+      GLM.mat4.scale(model, model, GLM.vec3.fromValues(GRID_WIDTH + 1, 0.1, 1));
       buffer.set(model, offset);
       buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
       offset += rect.instanceSize;
     }
     for (let col = 0; col < GRID_WIDTH; col += 2) {
       const model = GLM.mat4.create();
-      GLM.mat4.translate(model, model, GLM.vec3.fromValues(col + 0.5, GRID_HEIGHT / 2, 0.1));
-      GLM.mat4.scale(model, model, GLM.vec3.fromValues(0.1, GRID_HEIGHT, 1));
+      GLM.mat4.translate(model, model, GLM.vec3.fromValues(col - 0.5, GRID_HEIGHT / 2, 0.1));
+      GLM.mat4.scale(model, model, GLM.vec3.fromValues(0.1, GRID_HEIGHT + 1, 1));
       buffer.set(model, offset);
       buffer.set(new Float32Array([1, 1, 1, 0.2]), offset + model.length);
       offset += rect.instanceSize;
@@ -375,7 +376,7 @@
         const offset = i * rect.instanceSize;
         const model = GLM.mat4.create();
         const coord = toolData.measure.cells[i];
-        GLM.mat4.translate(model, model, GLM.vec3.fromValues(coord.x, coord.y, 0.1));
+        GLM.mat4.translate(model, model, GLM.vec3.fromValues(coord.x, coord.y, 0.11));
         buffer.set(model, offset);
         buffer.set(white, offset + model.length);
       }
@@ -520,8 +521,7 @@
       input = { type: "none" };
       dragStartCoord = null;
       dragCurrentCoord = null;
-      toolData.measure.lineTransform = null;
-      toolData.measure.cells = [];
+      toolData.measure = { ...toolData.measure, cells: [], distance: 0, lineTransform: null };
     }
   }
 
@@ -563,6 +563,8 @@
         if (toolData.activeTool?.type === "measure" && changedCell && dragStartCoord) {
           toolData.updateMeasureLine(dragStartCoord, dragCurrentCoord, 0.05);
           toolData.updateMeasureCells(dragStartCoord, dragCurrentCoord);
+          measureText!.style.left = event.x.toString() + "px";
+          measureText!.style.top = event.y.toString() + "px";
         }
       }
     }
@@ -699,4 +701,11 @@
       {handleSendLoadCharacter}
     />
   {/if}
+  <div
+    data-active={toolData.measure.cells.length > 0}
+    bind:this={measureText}
+    class="absolute pointer-events-none z-10 text-red-600 text-2xl p-1 font-bold hidden data-[active=true]:flex"
+  >
+    <span class="text-shadow-aurora-gray-1400 text-shadow-sm">{(toolData.measure.distance * 2.5) + "ft"}</span>
+  </div>
 </main>

@@ -2,21 +2,29 @@ import { Cartesian } from "$lib/point";
 import { MeasureShape, type GameTool } from ".";
 import * as GLM from "gl-matrix";
 
+type SelectTool = {};
+type MeasureTool = {
+  shape: MeasureShape;
+  lineTransform: GLM.mat4 | null;
+  cells: Cartesian[];
+  distance: number;
+};
+type ShapeTool = {};
+type DrawTool = {};
+type DiceTool = {};
+
 export class GameTools {
   activeTool: GameTool | null = $state(null);
-  select: {} = $state.raw({});
-  measure: {
-    shape: MeasureShape;
-    lineTransform: GLM.mat4 | null;
-    cells: Cartesian[];
-  } = $state.raw({
-    shape: MeasureShape.Cone,
+  select: SelectTool = $state.raw({});
+  measure: MeasureTool = $state.raw({
+    shape: MeasureShape.Line,
     lineTransform: null,
     cells: [],
+    distance: 0,
   });
-  shape: {} = $state.raw({});
-  draw: {} = $state.raw({});
-  dice: {} = $state.raw({});
+  shape: ShapeTool = $state.raw({});
+  draw: DrawTool = $state.raw({});
+  dice: DiceTool = $state.raw({});
 
   updateMeasureLine(from: Cartesian, to: Cartesian, width: number) {
     const difference = to.subtract(from);
@@ -34,22 +42,36 @@ export class GameTools {
   }
 
   updateMeasureCells(from: Cartesian, to: Cartesian) {
-    const measureCopy = { ...this.measure };
+    this.measure = { ...this.measure, cells: [] };
+    const distance = Math.round(from.distance(to));
+    // convert from quarter squares to full squares
+    from = new Cartesian(Math.floor(from.x / 2), Math.floor(from.y / 2));
+    to = new Cartesian(Math.floor(to.x / 2), Math.floor(to.y / 2));
+    let fullCells = [...this.measure.cells];
     switch (this.measure.shape) {
       case MeasureShape.Line:
-        measureCopy.cells = this.getCellsInLine(from, to);
+        fullCells = this.getCellsInLine(from, to);
         break;
       case MeasureShape.Square:
-        measureCopy.cells = this.getCellsInSquare(from, to);
+        fullCells = this.getCellsInSquare(from, to);
         break;
       case MeasureShape.Circle:
-        measureCopy.cells = this.getCellsInCircle(from, to);
+        fullCells = this.getCellsInCircle(from, to);
         break;
       case MeasureShape.Cone:
-        measureCopy.cells = this.getCellsInCone(from, to);
+        fullCells = this.getCellsInCone(from, to);
         break;
     }
-    this.measure = measureCopy;
+    // convert back to quarter squares
+    let quarterCells = [];
+    for (const cell of fullCells) {
+      const coord = new Cartesian(cell.x * 2, cell.y * 2);
+      quarterCells.push(new Cartesian(coord.x, coord.y));
+      quarterCells.push(new Cartesian(coord.x + 1, coord.y));
+      quarterCells.push(new Cartesian(coord.x + 1, coord.y + 1));
+      quarterCells.push(new Cartesian(coord.x, coord.y + 1));
+    }
+    this.measure = { ...this.measure, cells: quarterCells, distance };
   }
 
   private getCellsInLine(from: Cartesian, to: Cartesian): Cartesian[] {
@@ -173,7 +195,7 @@ export class GameTools {
     for (let x = minX; x <= maxX; x++) {
       for (let y = minY; y <= maxY; y++) {
         const cell = new Cartesian(x, y);
-        if (coveredArea(cell) >= 0.33 - 1e-6) {
+        if (coveredArea(cell) >= 0.45 - 1e-6) {
           cells.push(cell);
         }
       }
