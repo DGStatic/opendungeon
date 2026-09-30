@@ -62,7 +62,6 @@
                 <button
                   title={shape.title}
                   onclick={() => {
-                    console.log("asdf");
                     toolData.measure = { ...toolData.measure, shape: shape.shape };
                   }}
                   class="size-full"
