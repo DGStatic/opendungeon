@@ -550,13 +550,14 @@
   }
 
   function handleScroll(event: GameMouseScrollEvent) {
-    const delta = 1 + Math.pow(camera.zoom, 2.25) / 1000;
-    const newZoom = camera!.zoom + (event.delta > 0 ? delta : -delta);
-    if (newZoom < camera!.zoom) {
-      camera!.zoom = Math.max(MINIMUM_ZOOM, newZoom);
-    } else {
-      camera!.zoom = Math.min(MAXIMUM_ZOOM, newZoom);
-    }
+    const before = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+    const zoomDelta = 1 + Math.pow(camera.zoom, 2.25) / 1000;
+    const newZoom = camera.zoom + (event.delta > 0 ? zoomDelta : -zoomDelta);
+    camera.zoom = Math.min(MAXIMUM_ZOOM, Math.max(MINIMUM_ZOOM, newZoom));
+    const after = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
+    const dx = after.x - before.x;
+    const dy = after.y - before.y;
+    camera.translate(GLM.vec3.fromValues(dx, dy, 0));
   }
 
   function handleKeyPress(event: GameKeyEvent) {

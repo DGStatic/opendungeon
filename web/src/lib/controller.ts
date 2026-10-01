@@ -37,7 +37,7 @@ export type GameMouseMoveEvent = {
   y: number;
 };
 
-export type GameMouseScrollEvent = { type: "scroll"; delta: number };
+export type GameMouseScrollEvent = { type: "scroll"; x: number; y: number; delta: number };
 
 export type GameMouseEvent =
   | GameMouseClearEvent // e.g. mouse exits the window;
@@ -105,7 +105,7 @@ export default class Controller {
     canvas.addEventListener("wheel", (event) => {
       event.preventDefault();
 
-      this.mouseEvents.push({ type: "scroll", delta: event.deltaY });
+      this.mouseEvents.push({ type: "scroll", x: event.x, y: event.y, delta: event.deltaY });
     });
 
     canvas.addEventListener("contextmenu", (event) => {
