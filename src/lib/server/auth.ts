@@ -1,4 +1,4 @@
-import { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET } from "$env/static/private";
+import { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET } from "$app/env/private";
 
 const discordAuthUrl = "https://discord.com/oauth2/authorize";
 const discordTokenUrl = "https://discord.com/api/oauth2/token";
@@ -14,6 +14,10 @@ type ThirdPartyUser = {
 };
 
 export function getDiscordAuthUrl(redirectUrl: string): URL {
+  if (!DISCORD_CLIENT_ID) {
+    throw new Error("Discord OAuth not configured.");
+  }
+
   const authUrl = new URL(discordAuthUrl);
   authUrl.searchParams.append("response_type", "code");
   authUrl.searchParams.append("client_id", DISCORD_CLIENT_ID);
@@ -27,6 +31,10 @@ export async function exchangeDiscordAuthCode(
   code: string,
   redirectUrl: string,
 ): Promise<ThirdPartyUser> {
+  if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
+    throw new Error("Discord OAuth not configured.");
+  }
+
   const params = new URLSearchParams({
     client_id: DISCORD_CLIENT_ID,
     client_secret: DISCORD_CLIENT_SECRET,
