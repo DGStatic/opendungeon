@@ -33,17 +33,18 @@ export const actions = {
     }
 
     const avatar = data.get("file") as File | null;
-    const avatarUri = !avatar
-      ? null
-      : await (async () => {
-          const image = new Bun.Image(avatar);
-          image.resize(AVATAR_WIDTH, AVATAR_HEIGHT, { filter: "linear" });
+    const avatarUri =
+      !avatar || avatar.size === 0
+        ? null
+        : await (async () => {
+            const image = new Bun.Image(avatar);
+            image.resize(AVATAR_WIDTH, AVATAR_HEIGHT, { filter: "linear" });
 
-          const converted = await image.webp().blob();
-          const uri = `avatar/${crypto.randomUUID()}.webp`;
-          await files.write(uri, converted);
-          return uri;
-        })();
+            const converted = await image.webp().blob();
+            const uri = `avatar/${crypto.randomUUID()}.webp`;
+            await files.write(uri, converted);
+            return uri;
+          })();
 
     await createProfile(session.user_id, username, avatarUri);
 
