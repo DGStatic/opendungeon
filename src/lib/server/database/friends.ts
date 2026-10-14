@@ -10,6 +10,23 @@ type Friend = {
   updated_at: Date;
 };
 
+export async function getFriend(firstUserId: string, secondUserId: string): Promise<Friend> {
+  const [friend] = await db<[Friend]>`
+    SELECT
+      friend_id,
+      sender_id,
+      recipient_id,
+      accepted,
+      created_at,
+      updated_at
+    FROM friends
+    WHERE ${firstUserId} in (sender_id, recipient_id) 
+    AND ${secondUserId} in (sender_id, recipient_id);
+  `;
+
+  return friend;
+}
+
 export async function createFriend(senderId: string, recipientId: string): Promise<Friend> {
   const [friend] = await db<[Friend]>`
     INSERT INTO friends (sender_id, recipient_id)
@@ -25,7 +42,7 @@ export async function createFriend(senderId: string, recipientId: string): Promi
   return friend;
 }
 
-type FriendProfile = Friend & Omit<Profile, "profile_id" | "created_at" | "updated_at">;
+export type FriendProfile = Friend & Omit<Profile, "profile_id" | "created_at" | "updated_at">;
 
 export async function listFriendProfiles(userId: string): Promise<FriendProfile[]> {
   const friends = db<FriendProfile[]>`

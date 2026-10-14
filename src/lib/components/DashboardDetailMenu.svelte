@@ -1,43 +1,49 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
-  import { getInitials, getSimplifiedTimeSince } from "#lib/utils.js";
+  import { getSimplifiedTimeSince } from "#lib/utils.js";
   import Icon from "@iconify/svelte";
-  import { Avatar } from "melt/components";
-  import StyledButton from "./StyledButton.svelte";
-  import StyledCard from "./StyledCard.svelte";
-  import StyledInput from "./StyledInput.svelte";
+  import StyledButton from "#lib/components/StyledButton.svelte";
+  import StyledCard from "#lib/components/StyledCard.svelte";
+  import StyledInput from "#lib/components/StyledInput.svelte";
   import type { ClassValue } from "svelte/elements";
   import type { Level } from "#lib/server/database/levels.js";
   import type { Profile } from "#lib/server/database/profiles.js";
   import type { GameWithPlayerProfiles } from "#lib/server/database/games.js";
+  import type { FriendProfile } from "#lib/server/database/friends.js";
+  import { enhance } from "$app/forms";
+  import ProfileList from "#lib/components/ProfileList.svelte";
 
   type Props = {
     profile: Profile;
+    friends: FriendProfile[];
     creatingGame: boolean;
     activeGame: GameWithPlayerProfiles | null;
     activeLevel: Level | null;
+    onCreateGame: (gameId: string) => void;
     onClose: () => void;
     class?: ClassValue;
   };
 
   let {
     profile,
+    friends,
     creatingGame,
     activeGame,
     activeLevel,
+    onCreateGame,
     onClose,
     class: customClass,
   }: Props = $props();
 
-  let showInviteBar = $state(false);
+  let showAddBar = $state(false);
   let showConfirmation = $state(false);
 
   $effect(() => {
-    void activeGame;
-    void activeLevel;
+    void activeGame?.game_id;
+    void activeLevel?.level_id;
 
-    showInviteBar = false;
+    showAddBar = false;
     showConfirmation = false;
   });
 </script>
@@ -52,7 +58,20 @@
     ><Icon icon="bytesize:close" width={18} height={18} /></button
   >
   {#if creatingGame}
-    <form method="POST" action="?/creategame" class="flex flex-col gap-8">
+    <form
+      method="POST"
+      action="?/creategame"
+      use:enhance={() => {
+        return async ({ result, update }) => {
+          await update();
+          if (result.type === "success" && typeof result.data?.gameId === "string") {
+            console.log(result.data);
+            onCreateGame(result.data.gameId);
+          }
+        };
+      }}
+      class="flex flex-col gap-8"
+    >
       <StyledInput name="name" placeholder="Game name" autocomplete="off" />
       <StyledButton label="Create Game" />
     </form>
@@ -71,44 +90,30 @@
         <h4 class="text-lg">Players</h4>
         <button
           onclick={() => {
-            showInviteBar = !showInviteBar;
+            showAddBar = !showAddBar;
           }}
           class="rounded bg-aurora-gray-1000 px-2 hover:bg-aurora-gray-800"
-          >{`${showInviteBar ? "Cancel" : "Invite"}`}</button
+          >{`${showAddBar ? "Cancel" : "Add"}`}</button
         >
       </div>
-      {#if showInviteBar}
-        <form method="POST" action="?/inviteplayer" class="flex flex-col gap-2 px-2">
-          <input name="game-id" type="hidden" value={activeGame.game_id} />
-          <StyledInput name="user-id" placeholder="Player Id" autocomplete="off" />
-          <StyledButton class="" label="Confirm" />
-        </form>
+      {#if showAddBar}
+        <ProfileList
+          profiles={friends.filter(
+            (friend) => !activeGame.players.find((p) => p.user_id === friend.user_id),
+          )}
+          activeGameId={activeGame.game_id}
+          emptyText="You have no friends..."
+          actions={[
+            {
+              icon: "akar-icons:circle-check-fill",
+              color: "text-success",
+              formAction: "addplayer",
+            },
+          ]}
+          class="rounded border border-aurora-gray-1000"
+        />
       {/if}
-      <div
-        class="flex max-h-40 flex-col gap-4 overflow-y-auto rounded-sm border border-aurora-gray-800 p-4"
-      >
-        <ul class="flex flex-col gap-4">
-          {#each activeGame.players as profile, i (i)}
-            <li class="flex flex-row items-center rounded-md bg-aurora-gray-1200 p-2 text-white">
-              <div class="flex flex-row items-center gap-2">
-                <div
-                  class="h-8 w-8 items-center rounded-full border-2 border-aurora-gray-600 bg-aurora-gray-1400 text-center"
-                >
-                  <Avatar src={!profile.avatar_uri ? "" : `/api/media/${profile.avatar_uri}`}>
-                    {#snippet children(avatar)}
-                      <img {...avatar.image} alt="Avatar" class="w-full-h-full rounded-full" />
-                      <span {...avatar.fallback} class="-mt-1 text-lg">
-                        {getInitials(profile.username)}
-                      </span>
-                    {/snippet}
-                  </Avatar>
-                </div>
-                <h3 class="text-lg">{profile.username}</h3>
-              </div>
-            </li>
-          {/each}
-        </ul>
-      </div>
+      <ProfileList profiles={activeGame.players} class="rounded border border-aurora-gray-1000" />
     </div>
     <div class="flex flex-col gap-2">
       <StyledButton
@@ -124,13 +129,20 @@
               label="Cancel"
             />
           {/if}
-          <form method="POST" action="?/deletegame">
+          <form
+            method="POST"
+            action="?/deletegame"
+            use:enhance
+            class={`cursor-pointer justify-items-center rounded-lg border border-aurora-gray-800  bg-danger/50 text-center hover:bg-danger ${showConfirmation ? "flex-1" : "flex-2"}`}
+          >
             <input name="game-id" type="hidden" value={activeGame.game_id} />
-            <button
-              class={`cursor-pointer justify-items-center rounded-lg border border-aurora-gray-800  bg-danger/50 py-2 text-center hover:bg-danger ${showConfirmation ? "flex-1" : "flex-2"}`}
-            >
-              {showConfirmation ? "Confirm" : "Delete Game"}
-            </button>
+            {#if showConfirmation}
+              <button class="size-full py-2">Confirm</button>
+            {:else}
+              <button class="size-full py-2" onclick={() => (showConfirmation = true)}
+                >Delete Game</button
+              >
+            {/if}
           </form>
         </div>
       {/if}
@@ -155,13 +167,23 @@
             label="Cancel"
           />
         {/if}
-        <form method="POST" action="?/deletelevel">
+        <form
+          method="POST"
+          action="?/deletelevel"
+          use:enhance
+          class={`grid cursor-pointer justify-items-center rounded-lg border border-aurora-gray-800 bg-danger/50 text-center hover:bg-danger ${showConfirmation ? "flex-1" : "flex-2"}`}
+        >
           <input name="level-id" type="hidden" value={activeLevel.level_id} />
-          <button
-            class={`grid cursor-pointer justify-items-center rounded-lg border border-aurora-gray-800 bg-danger/50 py-2 text-center hover:bg-danger ${showConfirmation ? "flex-1" : "flex-2"}`}
-          >
-            {showConfirmation ? "Confirm" : "Delete Level"}
-          </button>
+          {#if showConfirmation}
+            <button class="size-full py-2">Confirm</button>
+          {:else}
+            <button
+              class="size-full py-2"
+              onclick={() => {
+                showConfirmation = true;
+              }}>Delete Level</button
+            >
+          {/if}
         </form>
       </div>
     </div>

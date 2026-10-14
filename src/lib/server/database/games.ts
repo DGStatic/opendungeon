@@ -83,6 +83,7 @@ export async function listGamesWithPlayerProfiles(
       g.created_at,
       g.updated_at,
       p.user_id,
+      p.player_id,
       p.permission_level,
       pf.username,
       pf.avatar_uri,
@@ -105,17 +106,17 @@ export async function listGamesWithPlayerProfiles(
 
   return Object.entries(Object.groupBy(gamePlayerProfiles, ({ game_id }) => game_id)).map(
     ([gameId, rows]) => {
-      const first = gamePlayerProfiles.at(0)!;
+      const game = rows![0];
       return {
         game_id: gameId,
-        name: first.name,
-        user_id: first.creator_id,
+        name: game.name,
+        user_id: game.creator_id,
         game_master_id:
           rows?.find(({ permission_level }) => permission_level === "game_master")?.user_id ?? null,
-        uri: first.uri,
-        is_active: first.is_active,
-        created_at: first.created_at,
-        updated_at: first.updated_at,
+        uri: game.uri,
+        is_active: game.is_active,
+        created_at: game.created_at,
+        updated_at: game.updated_at,
         players:
           rows
             ?.filter(({ user_id }) => !!user_id)
@@ -125,8 +126,8 @@ export async function listGamesWithPlayerProfiles(
                 username,
                 avatar_uri,
                 game_id,
-                created_at,
-                updated_at,
+                profile_created_at,
+                profile_updated_at,
                 player_id,
                 permission_level,
               }) => ({
@@ -134,8 +135,8 @@ export async function listGamesWithPlayerProfiles(
                 username,
                 avatar_uri,
                 game_id,
-                created_at,
-                updated_at,
+                created_at: profile_created_at,
+                updated_at: profile_updated_at,
                 player_id,
                 permission_level,
               }),
@@ -166,6 +167,7 @@ export async function getUserGameWithPlayerProfiles(
       g.created_at,
       g.updated_at,
       p.user_id,
+      p.player_id,
       p.permission_level,
       pf.username,
       pf.avatar_uri,
