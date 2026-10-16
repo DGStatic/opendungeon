@@ -356,7 +356,7 @@
         GLM.mat4.translate(
           transform,
           transform,
-          GLM.vec3.fromValues(rounded.x - 0.5, rounded.y - 0.5, 0),
+          GLM.vec3.fromValues(rounded.x + 0.5, rounded.y + 0.5, 0),
         );
         GLM.mat4.rotateZ(transform, transform, rotation);
         GLM.mat4.rotateX(transform, transform, degToRad(90));
