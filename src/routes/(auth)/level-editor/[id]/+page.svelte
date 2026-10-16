@@ -435,6 +435,20 @@
               if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
                 continue;
               }
+
+              const cell = levelData.grid[y][x];
+              if (cell?.decoration) {
+                const index = decorationDataLookup[
+                  levelData.decorations[cell.decoration.index]
+                ].findIndex((c) => c.x === x && c.y === y);
+                if (index !== -1) {
+                  decorationDataLookup[levelData.decorations[cell.decoration.index]].splice(
+                    index,
+                    1,
+                  );
+                }
+              }
+
               levelData.grid[y][x] = null;
             }
           }
