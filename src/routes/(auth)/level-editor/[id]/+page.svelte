@@ -441,12 +441,8 @@
                 const index = decorationDataLookup[
                   levelData.decorations[cell.decoration.index]
                 ].findIndex((c) => c.x === x && c.y === y);
-                if (index !== -1) {
-                  decorationDataLookup[levelData.decorations[cell.decoration.index]].splice(
-                    index,
-                    1,
-                  );
-                }
+                assert(index !== -1, "Failed to find decoration data");
+                decorationDataLookup[levelData.decorations[cell.decoration.index]].splice(index, 1);
               }
 
               levelData.grid[y][x] = null;
