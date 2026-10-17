@@ -40,7 +40,14 @@
   let levelName = $derived<string | null>(data.level.name);
   let renderer: Renderer;
   let camera: Camera;
-  let levelData: LevelData;
+  let levelData: LevelData = $derived(
+    data.level.data ?? {
+      version: 1,
+      textures: [],
+      decorations: [],
+      grid: Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_HEIGHT).fill(null)),
+    },
+  );
   let input: { type: "none" } | { type: "dragging"; button: number } = { type: "none" };
   let dragStartCoord: Cartesian | null = null;
   let dragCurrentCoord: Cartesian | null = null;
@@ -53,6 +60,7 @@
   > = {};
   let draggingDecoration: string | null = null;
   let cursorLocation: Cartesian | null = null;
+  let inputFocused = $state(false);
 
   onMount(() => {
     renderer = new Renderer(canvas!, {
@@ -62,13 +70,6 @@
     camera = new OrthographicCamera(canvas!.width / canvas!.height); // TODO: handle resizing window
     camera.zoom = 150;
     camera.translate(GLM.vec3.fromValues(-GRID_WIDTH / 2, -GRID_HEIGHT / 2, 0));
-
-    levelData = data.level.data ?? {
-      version: 1,
-      textures: [],
-      decorations: [],
-      grid: Array.from({ length: GRID_HEIGHT }, () => new Array(GRID_HEIGHT).fill(null)),
-    };
 
     // load decorations data lookup
     for (let row = 0; row < levelData.grid.length; row++) {
@@ -144,15 +145,14 @@
         }
 
         if (rotation !== null) {
-          rotation = Math.min(MAXIMUM_ROTATION, rotation);
-          const rot = degToRad(rotation);
+          const rot = degToRad(Math.min(MAXIMUM_ROTATION, rotation));
           levelData.grid[y][x].decoration.rotation = rot;
           decorationDataLookup[key][index].rotation = rot;
         }
         if (scale !== null) {
-          scale = Math.max(MINIMUM_SCALE, Math.min(MAXIMUM_SCALE, scale));
-          levelData.grid[y][x].decoration.scale = scale;
-          decorationDataLookup[key][index].scale = scale;
+          const scl = Math.max(MINIMUM_SCALE, Math.min(MAXIMUM_SCALE, scale));
+          levelData.grid[y][x].decoration.scale = scl;
+          decorationDataLookup[key][index].scale = scl;
         }
       }
     }
@@ -272,7 +272,7 @@
       const { x, y } = selectedDecorationCells[i];
       const buffer = rect.allocate(4);
       const pivot = GLM.mat4.create();
-      GLM.mat4.translate(pivot, pivot, GLM.vec3.fromValues(x, y, 10));
+      GLM.mat4.translate(pivot, pivot, GLM.vec3.fromValues(x, y, 100));
       GLM.mat4.rotateZ(pivot, pivot, degToRad(0));
 
       const sides: Array<{ offset: GLM.vec3; scale: GLM.vec3 }> = [
@@ -373,6 +373,11 @@
     input = { type: "dragging", button: event.button };
     const { x, y } = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
     dragStartCoord = new Cartesian(x, y).round();
+    const targetCoord = dragStartCoord.scale(0.5).floor().scale(2);
+    const targetCell = levelData.grid[targetCoord.y][targetCoord.x];
+    if (!targetCell || !targetCell.decoration) {
+      selectedDecorationCells = [];
+    }
   }
 
   function handleRelease(event: MouseEvent) {
@@ -417,7 +422,10 @@
               );
 
               assert(textureIndex !== -1, "Failed to insert and find texture");
-              levelData.grid[y][x] = { texture: textureIndex, decoration: null };
+              levelData.grid[y][x] = {
+                texture: textureIndex,
+                decoration: levelData.grid[y][x]?.decoration ?? null,
+              };
             }
           }
         } else if (event.button === MouseButton.Right) {
@@ -427,6 +435,16 @@
               if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
                 continue;
               }
+
+              const cell = levelData.grid[y][x];
+              if (cell?.decoration) {
+                const index = decorationDataLookup[
+                  levelData.decorations[cell.decoration.index]
+                ].findIndex((c) => c.x === x && c.y === y);
+                assert(index !== -1, "Failed to find decoration data");
+                decorationDataLookup[levelData.decorations[cell.decoration.index]].splice(index, 1);
+              }
+
               levelData.grid[y][x] = null;
             }
           }
@@ -484,11 +502,44 @@
     }
   }
 
+  function handleKeyDown(event: KeyboardEvent) {
+    switch (event.key) {
+      case "Backspace":
+      case "Delete":
+        if (inputFocused) {
+          return;
+        }
+        for (const cell of selectedDecorationCells) {
+          const canonical = levelData.grid[cell.y][cell.x];
+          assert(
+            canonical !== null && canonical.decoration !== null,
+            "Failed to find selected decoration cell in level data.",
+          );
+
+          const cellsByDecoration =
+            decorationDataLookup[levelData.decorations[canonical!.decoration!.index]];
+          const index = cellsByDecoration.findIndex((c) => new Cartesian(c.x, c.y).isEqual(cell));
+          cellsByDecoration.splice(index, 1);
+
+          levelData.grid[cell.y][cell.x]!.decoration = null;
+        }
+
+        selectedDecorationCells = [];
+        break;
+      case "Escape":
+        selectedTexture = null;
+        selectedDecorationCells = [];
+        break;
+    }
+  }
+
   async function handleSubmit({ formData }: { formData: FormData }) {
     const blob = new Blob([JSON.stringify(levelData)], { type: "application/json" });
     formData.append("level-data", blob);
   }
 </script>
+
+<svelte:window onkeydown={handleKeyDown} />
 
 <main class="relative grid justify-start">
   <GameWindow
@@ -579,6 +630,8 @@
           name="name"
           bind:value={levelName}
           autocomplete="off"
+          onfocusin={() => (inputFocused = true)}
+          onfocusout={() => (inputFocused = false)}
         />
         <StyledButton label="Save" class="w.min px-4" />
       </form>
@@ -624,6 +677,11 @@
             ondragstart={(event) => {
               event.dataTransfer?.setData("text/plain;name=key", key);
             }}
+            ondragend={(event) => {
+              if (event.dataTransfer?.dropEffect === "none") {
+                draggingDecoration = null;
+              }
+            }}
             draggable="true"
             class="grid justify-center"
           >
@@ -650,6 +708,8 @@
           min={0}
           max={360}
           bind:value={rotation}
+          onfocusin={() => (inputFocused = true)}
+          onfocusout={() => (inputFocused = false)}
         />
       </div>
 
@@ -663,6 +723,8 @@
           max={5}
           bind:value={scale}
           step={0.1}
+          onfocusin={() => (inputFocused = true)}
+          onfocusout={() => (inputFocused = false)}
         />
       </div>
     {/if}
