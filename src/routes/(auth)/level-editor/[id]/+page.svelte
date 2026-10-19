@@ -513,7 +513,8 @@
           }
 
           const delta = space.scale(2.0).subtract(targetSpace.scale(2.0));
-          let canMoveSelectedDecorations = true;
+
+          // check if decorations can move
           for (const cell of selectedDecorationCells) {
             if (
               cell.x - delta.x < 0 ||
@@ -521,7 +522,6 @@
               cell.y - delta.y < 0 ||
               cell.y - delta.y > GRID_HEIGHT - 1
             ) {
-              canMoveSelectedDecorations = false;
               return;
             }
 
@@ -539,28 +539,27 @@
 
             const target = levelData.grid[cell.y - delta.y][cell.x - delta.x];
             if (!target || target.decoration) {
-              canMoveSelectedDecorations = false;
+              return;
             }
           }
 
-          if (canMoveSelectedDecorations) {
-            for (const cell of selectedDecorationCells) {
-              const canonical = levelData.grid[cell.y][cell.x];
+          // move decorations
+          for (const cell of selectedDecorationCells) {
+            const canonical = levelData.grid[cell.y][cell.x];
 
-              const key = levelData.decorations[canonical!.decoration!.index];
-              const index = decorationDataLookup[key].findIndex(
-                (c) => c.x === cell.x && c.y === cell.y,
-              );
+            const key = levelData.decorations[canonical!.decoration!.index];
+            const index = decorationDataLookup[key].findIndex(
+              (c) => c.x === cell.x && c.y === cell.y,
+            );
 
-              const target = levelData.grid[cell.y - delta.y][cell.x - delta.x];
+            const target = levelData.grid[cell.y - delta.y][cell.x - delta.x];
 
-              cell.x -= delta.x;
-              cell.y -= delta.y;
-              target!.decoration = canonical!.decoration;
-              canonical!.decoration = null;
-              decorationDataLookup[key][index].x = cell.x;
-              decorationDataLookup[key][index].y = cell.y;
-            }
+            cell.x -= delta.x;
+            cell.y -= delta.y;
+            target!.decoration = canonical!.decoration;
+            canonical!.decoration = null;
+            decorationDataLookup[key][index].x = cell.x;
+            decorationDataLookup[key][index].y = cell.y;
           }
         } else {
           dragCurrentCoord = new Cartesian(x, y).round();
