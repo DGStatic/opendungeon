@@ -235,7 +235,8 @@
       input.type === "dragging" &&
       input.button !== MouseButton.Middle &&
       dragStartCoord &&
-      dragCurrentCoord
+      dragCurrentCoord &&
+      selectedDecorationCells.length === 0
     ) {
       const minY = Math.min(dragStartCoord.y, dragCurrentCoord.y);
       const maxY = Math.max(dragStartCoord.y, dragCurrentCoord.y);
@@ -373,10 +374,13 @@
     input = { type: "dragging", button: event.button };
     const { x, y } = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
     dragStartCoord = new Cartesian(x, y).round();
-    const targetCoord = dragStartCoord.scale(0.5).floor().scale(2);
-    const targetCell = levelData.grid[targetCoord.y][targetCoord.x];
-    if (!targetCell || !targetCell.decoration) {
-      selectedDecorationCells = [];
+
+    if (event.button !== MouseButton.Middle) {
+      const targetCoord = dragStartCoord.scale(0.5).floor().scale(2);
+      const targetCell = levelData.grid[targetCoord.y][targetCoord.x];
+      if (!targetCell || !targetCell.decoration) {
+        selectedDecorationCells = [];
+      }
     }
   }
 
@@ -391,7 +395,11 @@
         const minX = Math.max(0, Math.min(dragStartCoord.x, dragCurrentCoord.x));
         const maxX = Math.min(GRID_WIDTH, Math.max(dragStartCoord.x, dragCurrentCoord.x));
 
-        if (event.button === MouseButton.Left && !selectedTexture) {
+        if (
+          event.button === MouseButton.Left &&
+          !selectedTexture &&
+          selectedDecorationCells.length === 0
+        ) {
           // deselect
           selectedDecorationCells = [];
           rotation = null;
@@ -474,7 +482,89 @@
         camera?.translate(GLM.vec3.fromValues(-delta.x, delta.y, 0));
       } else if (input.button === MouseButton.Left || input.button === MouseButton.Right) {
         const { x, y } = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
-        dragCurrentCoord = new Cartesian(x, y).round();
+
+        if (selectedDecorationCells.length > 0) {
+          const space = new Cartesian(
+            Math.min(GRID_WIDTH - 1, Math.max(0, dragCurrentCoord?.x ?? dragStartCoord!.x)),
+            Math.min(GRID_HEIGHT - 1, Math.max(0, dragCurrentCoord?.y ?? dragStartCoord!.y)),
+          )
+            .round()
+            .scale(0.5)
+            .floor();
+
+          dragCurrentCoord = new Cartesian(x, y).round();
+
+          const targetSpace = new Cartesian(
+            Math.min(GRID_WIDTH - 1, Math.max(0, dragCurrentCoord.x)),
+            Math.min(GRID_HEIGHT - 1, Math.max(0, dragCurrentCoord.y)),
+          )
+            .round()
+            .scale(0.5)
+            .floor();
+
+          if (
+            space.isEqual(targetSpace) ||
+            dragStartCoord!.x < 0 ||
+            dragStartCoord!.x > GRID_WIDTH - 1 ||
+            dragStartCoord!.y < 0 ||
+            dragStartCoord!.y > GRID_HEIGHT - 1
+          ) {
+            return;
+          }
+
+          const delta = space.scale(2.0).subtract(targetSpace.scale(2.0));
+          let canMoveSelectedDecorations = true;
+          for (const cell of selectedDecorationCells) {
+            if (
+              cell.x - delta.x < 0 ||
+              cell.x - delta.x > GRID_WIDTH - 1 ||
+              cell.y - delta.y < 0 ||
+              cell.y - delta.y > GRID_HEIGHT - 1
+            ) {
+              canMoveSelectedDecorations = false;
+              return;
+            }
+
+            const canonical = levelData.grid[cell.y][cell.x];
+            assert(
+              canonical !== null && canonical.decoration !== null,
+              "Failed to move decoration of null cell.",
+            );
+
+            const key = levelData.decorations[canonical!.decoration!.index];
+            const index = decorationDataLookup[key].findIndex(
+              (c) => c.x === cell.x && c.y === cell.y,
+            );
+            assert(index !== -1, "Failed to move non-existant decoration.");
+
+            const target = levelData.grid[cell.y - delta.y][cell.x - delta.x];
+            if (!target || target.decoration) {
+              canMoveSelectedDecorations = false;
+            }
+          }
+
+          if (canMoveSelectedDecorations) {
+            for (const cell of selectedDecorationCells) {
+              const canonical = levelData.grid[cell.y][cell.x];
+
+              const key = levelData.decorations[canonical!.decoration!.index];
+              const index = decorationDataLookup[key].findIndex(
+                (c) => c.x === cell.x && c.y === cell.y,
+              );
+
+              const target = levelData.grid[cell.y - delta.y][cell.x - delta.x];
+
+              cell.x -= delta.x;
+              cell.y -= delta.y;
+              target!.decoration = canonical!.decoration;
+              canonical!.decoration = null;
+              decorationDataLookup[key][index].x = cell.x;
+              decorationDataLookup[key][index].y = cell.y;
+            }
+          }
+        } else {
+          dragCurrentCoord = new Cartesian(x, y).round();
+        }
       }
     }
   }
@@ -529,6 +619,8 @@
       case "Escape":
         selectedTexture = null;
         selectedDecorationCells = [];
+        dragStartCoord = null;
+        dragCurrentCoord = null;
         break;
     }
   }
@@ -676,6 +768,7 @@
           <li
             ondragstart={(event) => {
               event.dataTransfer?.setData("text/plain;name=key", key);
+              selectedDecorationCells = [];
             }}
             ondragend={(event) => {
               if (event.dataTransfer?.dropEffect === "none") {
