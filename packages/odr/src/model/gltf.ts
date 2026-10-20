@@ -316,14 +316,14 @@ export function buildGLTFDynamicShader(
   meshes: GLTFMesh[],
   skins: GLTFSkin[],
 ): Result<Shader, string> {
-  const { texCoords, joints, weights, failures } = meshes
+  const { texCoords, joints, weights } = meshes
     .flatMap(({ primitives }) => primitives)
     .reduce(
       (acc, curr) => {
         for (const attribute of Object.keys(curr.attributes)) {
           const name = getAttributeName(attribute as GLTFMeshAttribute);
           if (!name) {
-            acc.failures.push(`Received unknown attribute "${attribute}".`);
+            console.warn(`Received unknown attribute "${attribute}".`);
             return acc;
           }
 
@@ -341,12 +341,8 @@ export function buildGLTFDynamicShader(
         texCoords: new Set<string>(),
         joints: new Set<string>(),
         weights: new Set<string>(),
-        failures: [] as string[],
       },
     );
-  if (failures.length >= 1) {
-    return error(failures[0]!);
-  }
 
   const jointMatrixSize = Math.max(0, ...(skins ?? []).map((s) => s.joints.length));
   const maxUniformMatrixSize = gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS) / 4;
@@ -399,14 +395,14 @@ export function buildGLTFStaticShader(
   gl: WebGL2RenderingContext,
   meshes: GLTFMesh[],
 ): Result<Shader, string> {
-  const { texCoords, failures } = meshes
+  const { texCoords } = meshes
     .flatMap(({ primitives }) => primitives)
     .reduce(
       (acc, curr) => {
         for (const attribute of Object.keys(curr.attributes)) {
           const name = getAttributeName(attribute as GLTFMeshAttribute);
           if (!name) {
-            acc.failures.push(`Received unknown attribute "${attribute}".`);
+            console.warn(`Received unknown attribute "${attribute}".`);
             return acc;
           }
 
@@ -418,9 +414,6 @@ export function buildGLTFStaticShader(
       },
       { texCoords: new Set<string>(), failures: [] as string[] },
     );
-  if (failures.length >= 1) {
-    return error(failures[0]!);
-  }
 
   const textured = texCoords.size >= 1;
 
@@ -632,11 +625,12 @@ function loadAnimations(
 
     for (const channel of animation.channels) {
       const sampler = animation.samplers[channel.sampler];
-      if (sampler?.interpolation !== "LINEAR") {
+      const interpolation = sampler?.interpolation;
+      if (!interpolation || !["LINEAR", "STEP"].includes(interpolation)) {
         return error(`Unsupported animation interplation type "${sampler?.interpolation}".`);
       }
 
-      const inputAccessor = accessors[sampler.input]!;
+      const inputAccessor = accessors[sampler!.input]!;
       const inputView = bufferViews[inputAccessor.bufferView]!;
       const inputByteOffset = (inputView.byteOffset ?? 0) + (inputAccessor.byteOffset ?? 0);
       const inputByteLength = getAccessorByteLength(inputAccessor);
@@ -655,7 +649,7 @@ function loadAnimations(
         duration = channelDuration;
       }
 
-      const outputAccessor = accessors[sampler.output]!;
+      const outputAccessor = accessors[sampler!.output]!;
       if (outputAccessor.componentType !== GLTFComponentType.Float) {
         return error(`Unsupported animation component type "${outputAccessor.componentType}".`);
       }
@@ -679,6 +673,7 @@ function loadAnimations(
         path: channel.target.path,
         times: input,
         values: output,
+        interpolation,
       });
     }
 
