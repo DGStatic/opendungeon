@@ -196,6 +196,20 @@
           }
           break;
         }
+        case ServerMessageType.DiceRolled: {
+          const player = players[message.userId];
+          if (!player) {
+            console.error("failing to receive message");
+            return;
+          }
+
+          messages.push({
+            username: player.username,
+            avatarUri: player.avatarUri,
+            content: String(message.roll),
+          });
+          break;
+        }
       }
     };
 
@@ -437,8 +451,24 @@
       body: JSON.stringify({ content: message }),
     });
     if (!res.ok) {
-      // TODO: rework this to pop the correct message, not just the last one
-      messages.pop();
+      const index = messages.findIndex((m) => typeof m === "object" && m.content === message);
+      if (index !== -1) {
+        messages.splice(index, 1);
+      }
+      return;
+    }
+
+    if (message.startsWith("/roll")) {
+      const res = await fetch(`/api/games/${data.game.game_id}/roll`, {
+        method: "POST",
+        body: JSON.stringify({
+          rollString: message,
+        }),
+      });
+
+      if (!res.ok) {
+        console.log("bad roll");
+      }
     }
   }
 
