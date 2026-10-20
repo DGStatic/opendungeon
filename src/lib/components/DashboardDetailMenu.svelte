@@ -65,7 +65,6 @@
         return async ({ result, update }) => {
           await update();
           if (result.type === "success" && typeof result.data?.gameId === "string") {
-            console.log(result.data);
             onCreateGame(result.data.gameId);
           }
         };
