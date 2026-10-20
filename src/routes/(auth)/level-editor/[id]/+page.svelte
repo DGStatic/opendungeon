@@ -600,7 +600,7 @@
             }
           }
 
-          // move decorations
+          // move decorations using a clone of the grid to avoid conflicts
           const gridCopy = structuredClone(levelData.grid);
           for (let i = 0; i < selectedDecorationCells.length; i++) {
             let cell = selectedDecorationCells[i];
