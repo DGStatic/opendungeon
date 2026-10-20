@@ -361,7 +361,6 @@
   function handleClear() {
     input = { type: "none" };
     draggingDecoration = null;
-    selectedDecorationCells = [];
   }
 
   function handlePress(event: MouseEvent) {
@@ -525,7 +524,7 @@
             ...draggingDecoration,
             coord: target,
           };
-          selectedDecorationCells = [target];
+
           return;
         }
 
@@ -782,6 +781,11 @@
 
               selectedTexture = null;
               selectedDecorationCells = [];
+              rotation = 0;
+              scale = 1;
+            }}
+            onpointerup={() => {
+              draggingDecoration = null;
             }}
             class="grid justify-center"
           >
