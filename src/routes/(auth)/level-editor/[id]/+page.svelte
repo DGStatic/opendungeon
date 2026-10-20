@@ -60,8 +60,7 @@
   > = {};
   let draggingDecoration: {
     key: string;
-    x: number;
-    y: number;
+    coord: Cartesian | null;
   } | null = null;
   let inputFocused = $state(false);
 
@@ -336,17 +335,14 @@
     }
 
     // dragging decoration
-    if (draggingDecoration) {
+    if (draggingDecoration?.coord) {
       const elementId = decorationElementLookup[draggingDecoration.key];
       if (elementId !== undefined) {
         const element = renderer.getAndUseElement<StaticModel>(elementId);
         element.setCamera(camera);
         const buffer = element.allocate(1);
         const transform = GLM.mat4.create();
-        const rounded = new Cartesian(draggingDecoration.x, draggingDecoration.y)
-          .scale(0.5)
-          .round()
-          .scale(2);
+        const rounded = draggingDecoration.coord.scale(0.5).round().scale(2);
         GLM.mat4.translate(
           transform,
           transform,
@@ -365,6 +361,7 @@
   function handleClear() {
     input = { type: "none" };
     draggingDecoration = null;
+    selectedDecorationCells = [];
   }
 
   function handlePress(event: MouseEvent) {
@@ -377,12 +374,12 @@
     if (event.button !== MouseButton.Middle) {
       const targetCoord = dragStartCoord.scale(0.5).floor().scale(2);
       const targetCell = levelData.grid[targetCoord.y][targetCoord.x];
-      if (
-        !targetCell ||
-        !targetCell.decoration ||
-        !selectedDecorationCells.find((cell) => cell.isEqual(targetCoord))
-      ) {
-        selectedDecorationCells = [];
+      if (!selectedDecorationCells.find((cell) => cell.isEqual(targetCoord))) {
+        if (!targetCell?.decoration) {
+          selectedDecorationCells = [];
+        } else {
+          selectedDecorationCells = [targetCoord];
+        }
       }
     }
   }
@@ -458,7 +455,7 @@
             }
           }
         }
-      } else if (event.button === MouseButton.Left && draggingDecoration) {
+      } else if (event.button === MouseButton.Left && draggingDecoration?.coord) {
         // drop a decoration
         const { x, y } = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
         const targetCoord = new Cartesian(x, y).round().scale(0.5).floor().scale(2.0);
@@ -470,8 +467,9 @@
             levelData.decorations.push(draggingDecoration.key);
           }
           const decoration = {
-            ...draggingDecoration,
             index,
+            x: draggingDecoration.coord.x,
+            y: draggingDecoration.coord.y,
             rotation: 0,
             scale: 1,
           };
@@ -481,6 +479,10 @@
           } else {
             decorationDataLookup[draggingDecoration.key].push(decoration);
           }
+
+          selectedDecorationCells = [draggingDecoration.coord];
+        } else {
+          selectedDecorationCells = [];
         }
 
         draggingDecoration = null;
@@ -521,9 +523,9 @@
             .scale(2.0);
           draggingDecoration = {
             ...draggingDecoration,
-            x: target.x,
-            y: target.y,
+            coord: target,
           };
+          selectedDecorationCells = [target];
           return;
         }
 
@@ -771,8 +773,7 @@
             onpointerdown={() => {
               draggingDecoration = {
                 key,
-                x: 0,
-                y: 0,
+                coord: null,
               };
               input = {
                 type: "dragging",
