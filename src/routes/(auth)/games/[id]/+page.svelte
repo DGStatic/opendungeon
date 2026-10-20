@@ -181,7 +181,6 @@
           if (message.userId === data.profile.user_id) {
             return;
           }
-
           // TODO: color the ping per player
           handlePlayPing(new Cartesian(message.x, message.y));
           break;
@@ -234,6 +233,10 @@
       eventSource.close();
     };
   });
+
+  function tick(time: number) {
+    animator.tick(time);
+  }
 
   function draw() {
     if (!levelData || loadingCount >= 1) {
@@ -292,7 +295,8 @@
       let offset = 0;
       for (const [, { point, opacity }] of pingEntries) {
         const model = GLM.mat4.create();
-        GLM.mat4.translate(model, model, GLM.vec3.fromValues(point.x, point.y, 0.1));
+        GLM.mat4.translate(model, model, GLM.vec3.fromValues(point.x + 0.5, point.y + 0.5, 0.1));
+        GLM.mat4.scale(model, model, GLM.vec3.fromValues(2, 2, 1));
         const color = new Float32Array([1, 1, 1, opacity]);
 
         buffer.set(model, offset);
@@ -665,7 +669,7 @@
     }
 
     const { x, y } = renderer.canvasCoordToWorldCoord(camera, event.x, event.y);
-    const coord = new Cartesian(x, y).round();
+    const coord = new Cartesian(x, y).round().scale(0.5).floor().scale(2.0);
     handlePlayPing(coord);
 
     const res = await fetch(`/api/games/${data.game.game_id}/pings`, {
@@ -681,6 +685,7 @@
 <main class="relative grid h-dvh justify-start overflow-hidden">
   <GameWindow
     {draw}
+    {tick}
     bind:canvas
     onpointerleave={handleClear}
     onpointerdown={handlePress}
