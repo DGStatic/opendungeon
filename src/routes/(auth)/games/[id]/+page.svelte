@@ -54,7 +54,7 @@
       ]),
     ),
   );
-  let messages: (GameMessage | string)[] = $state([]);
+  let messages: GameMessage[] = $state([]);
   let loadingCount = $state(1);
   let showLeftMenu = $state(true);
   let showRightMenu = $state(true);
@@ -146,13 +146,13 @@
             },
           };
 
-          messages.push(`${message.username} has joined the game.`);
+          messages.push({ content: `${message.username} has joined the game.` });
           break;
         }
         case ServerMessageType.PlayerLeft: {
           const { [message.userId]: player, ...rest } = players;
           if (player) {
-            messages.push(`${player.username} has left the game.`);
+            messages.push({ content: `${player.username} has left the game.` });
           }
           players = rest;
 
@@ -204,10 +204,11 @@
           }
 
           messages.push({
-            username: player.username,
-            avatarUri: player.avatarUri,
-            content: String(message.total),
-            subcontent: message.rolls.length > 1 ? message.rolls.join(", ") : undefined,
+            content: `${players[message.userId].username} rolled ${String(message.total)}`,
+            subcontent:
+              message.rolls.length > 1 || message.modifiers.length > 0
+                ? message.rolls.join(", ")
+                : undefined,
           });
           break;
         }
@@ -468,7 +469,8 @@
       });
 
       if (!res.ok) {
-        console.log("bad roll");
+        const body = await res.json();
+        console.error(body.message);
       }
     }
   }

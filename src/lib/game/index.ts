@@ -14,17 +14,16 @@ export const MINIMUM_DICE_AMOUNT = 1;
 export const MAXIMUM_DICE_AMOUNT = 100;
 
 export enum RollType {
-  TakeHigh = "h",
-  TakeLow = "l",
-  Advantage = "a",
-  Disadvantage = "d",
-  Normal = "n",
+  DropHigh = "drop-high",
+  DropLow = "drop-low",
+  Advantage = "adv",
+  Disadvantage = "dis",
 }
 
 export type GameMessage = {
   content: string;
-  username: string;
-  avatarUri: string | null;
+  username?: string;
+  avatarUri?: string | null;
   subcontent?: string;
 };
 
