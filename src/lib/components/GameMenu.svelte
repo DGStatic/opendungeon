@@ -100,7 +100,7 @@
                 </div>
               </div>
             </li>
-          {:else if message.username && message.avatarUri}
+          {:else if message.username}
             <li
               class="flex min-w-0 flex-col gap-2 rounded-sm bg-aurora-gray-1200 p-2 wrap-break-word text-white"
             >
