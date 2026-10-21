@@ -67,7 +67,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
   }
 
   let rolls = [];
-  let allRolls = [];
+  const allRolls = [];
   for (let i = 0; i < amount; i++) {
     const roll = Math.ceil(Math.random() * die);
     const roll2 = Math.ceil(Math.random() * die);
