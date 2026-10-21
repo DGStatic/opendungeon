@@ -206,7 +206,8 @@
           messages.push({
             username: player.username,
             avatarUri: player.avatarUri,
-            content: String(message.roll),
+            content: String(message.total),
+            subcontent: message.rolls.length > 1 ? message.rolls.join(", ") : undefined,
           });
           break;
         }

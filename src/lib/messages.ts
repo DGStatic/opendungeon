@@ -83,5 +83,6 @@ export type MapPinged = {
 export type DiceRolled = {
   type: ServerMessageType.DiceRolled;
   userId: string;
-  roll: number;
+  total: number;
+  rolls: number[];
 };

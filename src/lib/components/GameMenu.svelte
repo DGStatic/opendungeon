@@ -107,7 +107,12 @@
                 </div>
                 <h3 class="text-lg">{message.username}</h3>
               </div>
-              <p class="">{message.content}</p>
+              <div>
+                <p class="">{message.content}</p>
+                {#if message.subcontent}
+                  <p class="text-aurora-gray-600">{message.subcontent}</p>
+                {/if}
+              </div>
             </li>
           {/if}
         {/each}

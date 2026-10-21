@@ -2,20 +2,15 @@ import { error, redirect } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import { gamerooms } from "#lib/server/gamerooms.js";
 import { ServerMessageType, type DiceRolled } from "#lib/messages.js";
+import {
+  RollType,
+  MINIMUM_DICE_AMOUNT,
+  MAXIMUM_DICE_AMOUNT,
+  MINIMUM_DIE,
+  MAXIMUM_DIE,
+} from "#lib/game/index.js";
 
 const ROLL_PREFIX = "/roll-";
-const MINIMUM_DIE = 2;
-const MAXIMUM_DIE = 1000000;
-const MINIMUM_DICE_AMOUNT = 1;
-const MAXIMUM_DICE_AMOUNT = 1000;
-
-enum RollType {
-  TakeHigh = "h",
-  TakeLow = "l",
-  Advantage = "a",
-  Disadvantage = "d",
-  Normal = "n",
-}
 
 export const POST: RequestHandler = async ({ locals, params, request }) => {
   const { session } = locals;
@@ -72,18 +67,22 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
   }
 
   let rolls = [];
+  let allRolls = [];
   for (let i = 0; i < amount; i++) {
     const roll = Math.ceil(Math.random() * die);
     const roll2 = Math.ceil(Math.random() * die);
     switch (rollType) {
       case RollType.Advantage:
         rolls.push(Math.max(roll, roll2));
+        allRolls.push(roll, roll2);
         break;
       case RollType.Disadvantage:
         rolls.push(Math.min(roll, roll2));
+        allRolls.push(roll, roll2);
         break;
       default:
         rolls.push(roll);
+        allRolls.push(roll);
         break;
     }
   }
@@ -97,7 +96,8 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
   const message: DiceRolled = {
     type: ServerMessageType.DiceRolled,
     userId: session.user_id,
-    roll: rolls.reduce((prev, curr) => prev + curr),
+    total: rolls.reduce((prev, curr) => prev + curr),
+    rolls: allRolls,
   };
   await gamerooms.publish(gameId, message);
 
