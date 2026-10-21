@@ -19,14 +19,14 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
   }
 
   const { id: gameId } = params;
-  const { rollString }: { rollString: string } = await request.json();
+  let { rollString }: { rollString: string } = await request.json();
 
   if (!rollString.startsWith(ROLL_PREFIX)) {
     error(400, "Bad roll string");
   }
 
-  const parts = rollString.slice(ROLL_PREFIX.length).split(" ");
-
+  rollString = rollString.slice(ROLL_PREFIX.length);
+  const parts: string[] = rollString.match(/[a-z][a-z-]*\([^)]*\)|\d*d\d+|\d+|[+-]/gi) ?? [];
   let total = 0;
   const allRolls = [];
   const modifiers = [];
@@ -54,9 +54,12 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
       roll: number;
       shouldSubtract: boolean;
     }[] = [];
-    const rollType = Object.values(RollType).find((type) => roll.startsWith(type)) ?? false;
-    if (rollType && roll.match(/(.*)/)) {
-      const args = roll.slice(rollType.length + 1, -1).split(",");
+    const rollType = Object.values(RollType).find((type) => roll.includes(type)) ?? false;
+    if (rollType && roll.match(/\(.*\)/)) {
+      const args = roll
+        .slice(rollType.length + 1, -1)
+        .split(",")
+        .map((arg) => arg.trim());
       if (args.length > 2 || !args[0].match(/^[0-9]*d[0-9]*$/)) {
         error(400, "Bad roll string");
       }
@@ -77,10 +80,15 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
         error(400, "Invalid die or dice amount");
       }
 
-      const dropHighLowAmount = [RollType.DropHigh, RollType.DropLow].includes(rollType)
+      const dropHighLowAmount: number | null = [RollType.DropHigh, RollType.DropLow].includes(
+        rollType,
+      )
         ? Number(args[1])
-        : 0;
-      if (Number.isNaN(dropHighLowAmount) || dropHighLowAmount < 1 || dropHighLowAmount >= amount) {
+        : null;
+      if (
+        dropHighLowAmount !== null &&
+        (Number.isNaN(dropHighLowAmount) || dropHighLowAmount < 1 || dropHighLowAmount >= amount)
+      ) {
         error(400, "Invalid argument");
       }
 
@@ -103,9 +111,9 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
       }
 
       if (rollType === RollType.DropLow) {
-        rolls = rolls.sort((a, b) => b.roll - a.roll).slice(0, rolls.length - dropHighLowAmount);
+        rolls = rolls.sort((a, b) => b.roll - a.roll).slice(0, rolls.length - dropHighLowAmount!);
       } else if (rollType === RollType.DropHigh) {
-        rolls = rolls.sort((a, b) => a.roll - b.roll).slice(0, rolls.length - dropHighLowAmount);
+        rolls = rolls.sort((a, b) => a.roll - b.roll).slice(0, rolls.length - dropHighLowAmount!);
       }
 
       total += rolls.reduce(
