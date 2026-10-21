@@ -26,30 +26,35 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
     error(400, "Bad roll string");
   }
 
-  const rollType =
-    parts[0].length > ROLL_PREFIX.length + 1
-      ? parts[0].at(ROLL_PREFIX.length) === RollType.TakeHigh
-        ? RollType.TakeHigh
-        : parts[0].at(ROLL_PREFIX.length) === RollType.TakeLow
-          ? RollType.TakeLow
+  const [roll, dice] = parts;
+
+  const isTakeHighLowRoll = roll.length > ROLL_PREFIX.length + 1; // /roll-hx, /roll-lx
+  const isOtherNonNormalRoll = roll.length === ROLL_PREFIX.length + 1; // /roll-a, /roll-d
+  const rollFlag = isTakeHighLowRoll ? roll.at(ROLL_PREFIX.length) : roll.at(-1);
+
+  const rollType = isTakeHighLowRoll
+    ? rollFlag === RollType.TakeHigh
+      ? RollType.TakeHigh
+      : rollFlag === RollType.TakeLow
+        ? RollType.TakeLow
+        : RollType.Normal
+    : isOtherNonNormalRoll
+      ? rollFlag === RollType.Advantage
+        ? RollType.Advantage
+        : rollFlag === RollType.Disadvantage
+          ? RollType.Disadvantage
           : RollType.Normal
-      : parts[0].length === ROLL_PREFIX.length + 1
-        ? parts[0].at(-1) === RollType.Advantage
-          ? RollType.Advantage
-          : parts[0].at(-1) === RollType.Disadvantage
-            ? RollType.Disadvantage
-            : RollType.Normal
-        : RollType.Normal;
+      : RollType.Normal;
 
   const takeHighLowAmount =
     rollType === RollType.TakeHigh || rollType === RollType.TakeLow
-      ? Number(parts[0].slice(ROLL_PREFIX.length + 1))
-      : 0;
+      ? Math.max(1, Number(roll.slice(ROLL_PREFIX.length + 1)))
+      : 1;
   if (Number.isNaN(takeHighLowAmount)) {
     error(400, "Bad roll string");
   }
 
-  const dieParts = parts[1].split("d");
+  const dieParts = dice.split("d");
   if (dieParts.length > 2) {
     error(400, "Bad roll string");
   }
