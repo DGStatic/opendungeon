@@ -29,7 +29,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
   const [roll, dice] = parts;
 
   const isTakeHighLowRoll = roll.length > ROLL_PREFIX.length + 1; // /roll-hx, /roll-lx
-  const isOtherNonNormalRoll = roll.length === ROLL_PREFIX.length + 1; // /roll-a, /roll-d
+  const isOtherSpecialRoll = roll.length === ROLL_PREFIX.length + 1; // /roll-a, /roll-d
   const rollFlag = isTakeHighLowRoll ? roll.at(ROLL_PREFIX.length) : roll.at(-1);
 
   const rollType = isTakeHighLowRoll
@@ -38,7 +38,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
       : rollFlag === RollType.TakeLow
         ? RollType.TakeLow
         : RollType.Normal
-    : isOtherNonNormalRoll
+    : isOtherSpecialRoll
       ? rollFlag === RollType.Advantage
         ? RollType.Advantage
         : rollFlag === RollType.Disadvantage
@@ -95,7 +95,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
   if (rollType === RollType.TakeHigh) {
     rolls = rolls.sort((a, b) => b - a).slice(0, Math.min(takeHighLowAmount, amount));
   } else if (rollType === RollType.TakeLow) {
-    rolls = rolls.sort().slice(0, Math.min(takeHighLowAmount, amount));
+    rolls = rolls.sort((a, b) => a - b).slice(0, Math.min(takeHighLowAmount, amount));
   }
 
   const message: DiceRolled = {
