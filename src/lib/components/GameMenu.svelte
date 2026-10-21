@@ -108,7 +108,7 @@
                 <h3 class="text-lg">{message.username}</h3>
               </div>
               <div>
-                <p class="">{message.content}</p>
+                <p>{message.content}</p>
                 {#if message.subcontent}
                   <p class="text-aurora-gray-600">{message.subcontent}</p>
                 {/if}
