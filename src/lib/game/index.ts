@@ -10,8 +10,9 @@ export const MAXIMUM_SCALE = 3;
 
 export type GameMessage = {
   content: string;
-  username: string;
-  avatarUri: string | null;
+  username?: string;
+  avatarUri?: string | null;
+  subcontent?: string;
 };
 
 export enum GameMenuTab {
