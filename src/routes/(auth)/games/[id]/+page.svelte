@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { type PageProps } from "./$types";
   import {
+    Command,
     GRID_HEIGHT,
     GRID_WIDTH,
     MAXIMUM_ZOOM,
@@ -28,7 +29,7 @@
   import GameToolMenu from "#lib/components/GameToolMenu.svelte";
   import Animator from "#lib/animator.js";
   import type { LevelData } from "#lib/server/database/levels.js";
-  import { ServerMessageType, type ServerMessage } from "#lib/messages.js";
+  import { ServerMessageType, type DiceRolled, type ServerMessage } from "#lib/messages.js";
   import type { GamePlayer, GameState } from "#lib/server/gamerooms.js";
   import decorations from "#lib/assets/decorations.json";
   import cellTextures from "#lib/assets/celltextures.json";
@@ -445,29 +446,46 @@
       content: message,
     });
 
-    const res = await fetch(`/api/games/${data.game.game_id}/chat`, {
-      method: "POST",
-      body: JSON.stringify({ content: message }),
-    });
-    if (!res.ok) {
-      const index = messages.findIndex((m) => typeof m === "object" && m.content === message);
-      if (index !== -1) {
-        messages.splice(index, 1);
+    const command = Object.values(Command).find((c) => message.startsWith(c));
+
+    const isPrivateRoll = command === Command.PrivateRoll;
+
+    if (!isPrivateRoll) {
+      const res = await fetch(`/api/games/${data.game.game_id}/chat`, {
+        method: "POST",
+        body: JSON.stringify({ content: message }),
+      });
+      if (!res.ok) {
+        const index = messages.findIndex((m) => typeof m === "object" && m.content === message);
+        if (index !== -1) {
+          messages.splice(index, 1);
+        }
+        return;
       }
-      return;
     }
 
-    if (message.startsWith("/roll")) {
-      const res = await fetch(`/api/games/${data.game.game_id}/roll`, {
+    if (command) {
+      const [, args] = message.split(command);
+      const res = await fetch(`/api/games/${data.game.game_id}/command`, {
         method: "POST",
         body: JSON.stringify({
-          rollString: message,
+          command,
+          args,
         }),
       });
 
       if (!res.ok) {
         const body = await res.json();
         console.error(body.message);
+        return;
+      }
+
+      if (isPrivateRoll) {
+        const rollMessage: DiceRolled = await res.json();
+        messages.push({
+          content: `${data.profile.username} rolled ${String(rollMessage.total)}`,
+          subcontent: rollMessage.rolls.join(", "),
+        });
       }
     }
   }
@@ -775,7 +793,7 @@
   >
     <!-- TODO: support metric -->
     <span class="text-shadow-aurora-gray-1400 text-shadow-sm"
-      >{toolData.measure.distance * 2.5 + "ft"}</span
+      >{(toolData.measure.distance * 2.5).toFixed(1) + "ft"}</span
     >
   </div>
 </main>
